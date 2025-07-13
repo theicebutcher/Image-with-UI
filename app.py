@@ -280,7 +280,7 @@ def submit_feedback():
         }
 
         # Send to Google Apps Script web app
-        script_url = 'https://script.google.com/macros/s/AKfycbyTNx59ui4DrCGQ7G87Z7ZTUIbUCIHbe7r9en33IuZQMY8jgyIMw2ElegY_dxQ_4kSo5Q/exec'  # Replace with your web app URL
+        script_url = 'https://script.google.com/macros/s/AKfycbzKOxVD9ju-bewiQuCZS8hHByJ2JfU0mhhDbQFxWYIaQemRPgeJLtrvbOC8G-yf3vmg/exec'  # Replace with your web app URL
         response = requests.post(script_url, json=feedback_data, timeout=30)
         print(f"Google Apps Script response status: {response.status_code}, text: {response.text}")  # Debug log
 
