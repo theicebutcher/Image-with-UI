@@ -470,7 +470,13 @@ def chatbot():
         5.IMAGE QUALITY:
          -Always create an HD high resolution image, captured by a high resolution camera.
 
-        6.EXTRA:
+        6.IMAGE INSIDE SCULPTURES:
+         -If there is an image present in a sculpture design, then:
+        "effect": "it should look like a colored printed paper is frozen into the icecube, the paper should be colored and should be in center of the cube",
+        "Strict": "the image should be placed into the ice few centimeters in some depth",
+        "important": Do not include the logo of the company in the sculpture which says 'ice butcher, purveyors of perfect ice'
+
+        7.EXTRA:
 
          -IF 'TOPPER' is mentioned in an image, then it means that it will be placed on top of the sculpture at the very top (BUT DONT ADD THE 'TOPPER' TEXT).
          -IF 'TOPPER(WITH LOGO)' is mentioned in an image, then it means that it will be placed on top of the sculpture at the very top with a logo in the center of the topper, DO NOT ADD A LOGO BY YOURSELF IF IT IS NOT PROVIDED, JUST KEEP IT EMPTY.
