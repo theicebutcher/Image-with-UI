@@ -280,7 +280,7 @@ def submit_feedback():
         }
 
         # Send to Google Apps Script web app
-        script_url = 'https://script.google.com/macros/s/AKfycbzKOxVD9ju-bewiQuCZS8hHByJ2JfU0mhhDbQFxWYIaQemRPgeJLtrvbOC8G-yf3vmg/exec'  # Replace with your web app URL
+        script_url = 'https://script.google.com/macros/s/AKfycbyTNx59ui4DrCGQ7G87Z7ZTUIbUCIHbe7r9en33IuZQMY8jgyIMw2ElegY_dxQ_4kSo5Q/exec'  # Replace with your web app URL
         response = requests.post(script_url, json=feedback_data, timeout=30)
         print(f"Google Apps Script response status: {response.status_code}, text: {response.text}")  # Debug log
 
@@ -309,7 +309,7 @@ ICE_CUBE_PROMPTS = {
         "Extra":"remove any background of the image before adding it to the icecube"
     """,
     "Colored": """
-    "task": "add the image styles onto the icecube, ",
+    "task": "add the image styles onto the icecube, ", 
     "instructions": 
         "effect": "it should look like the ice is colored and not etched",
         "Strict": "the image should be engraved into the ice few centimeters with some depth",
@@ -319,7 +319,7 @@ ICE_CUBE_PROMPTS = {
     "Paper": """
     "task": "add the image inside the icecube, ",
     "instructions": 
-        "effect": "it should look like a colored printed paper is frozen into the icecube, the paper should be colored and should be in center of the cube",
+        "effect": "it should look like a colored printed paper is frozen into the icecube, the paper should be colored with some white outline to the logo and should be in center of the cube",
         "Strict": "the image should be placed into the ice few centimeters in some depth",
         "Extra":"remove any background of the image before adding it to the icecube",
         "ice":"ice should be crystal clear, no bubbles or clouds"
@@ -454,6 +454,7 @@ def chatbot():
 
         3. BACKGROUND AND ENVIRONMENT
             -place the sculpture on a wooden table in a realistic environment or a country club.
+            
         
         
         4. PROHIBITED MODIFICATIONS:
@@ -466,14 +467,17 @@ def chatbot():
            - no extra ice base for the sculpture..
            - no changes in the sculpture itself allowed
            - do not change the sculpture design
+           - no extra ice pieces on the sculpture
+           - place the sculpture directly on the table and no extra ice base 
+           - no extra ice base
+           - do not add extra ice base
 
         5.IMAGE QUALITY:
          -Always create an HD high resolution image, captured by a high resolution camera.
 
         6.IMAGE INSIDE SCULPTURES:
          -If there is an image present in a sculpture design, then:
-        "effect": "it should look like a colored printed paper is frozen into the icecube, the paper should be colored and should be in center of the cube",
-        "Strict": "the image should be placed into the ice few centimeters in some depth",
+        "effect": "if any detail is shown in the image that is other that blue color, then it should look like a paper sticker is pasted on the ice sculpture, the paper should be colored, and not made of ice",
         "important": Do not include the logo of the company in the sculpture which says 'ice butcher, purveyors of perfect ice'
 
         7.EXTRA:
