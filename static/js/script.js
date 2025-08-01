@@ -394,106 +394,279 @@ userInput.addEventListener('paste', checkInput);
 
 // Also call checkInput when files are selected (you'll need to modify your file selection logic)
 // For example, in your previewImage() function, add a call to checkInput()
-  
-  async function sendMessage() {
+function displayContentAfterSend() {
+    const chatMessages = document.getElementById('chat-messages');
+    const messageDiv = document.createElement('div');
+    messageDiv.classList.add('message', 'bot-message');
+
+    const previewDiv = document.createElement('div');
+    previewDiv.className = 'template-preview';
     
-    const quickPrompts = document.querySelector('.quick-prompts');
-    if (quickPrompts) {
-        quickPrompts.style.display = 'none';
+    // Add template info if an ice cube is selected
+    if (currentIceCubeSelection) {
+        const selectedTemplate = getTemplateByName(currentIceCubeSelection);
+        if (selectedTemplate) {
+            previewDiv.innerHTML = `
+                <div class="template-info" style="margin-bottom: 10px; font-weight: bold;">
+                    Selected template: ${selectedTemplate.name}
+                </div>
+                <img src="${selectedTemplate.image}" alt="${selectedTemplate.name}" 
+                     style="max-width: 150px; max-height: 150px; border-radius: 8px; border: 1px solid #eee;">
+            `;
+        }
     }
+
+    // Add uploaded files if any exist
+    if (selectedFiles.length > 0) {
+        const filesTitle = document.createElement('div');
+        filesTitle.style.margin = "10px 0 5px 0";
+        filesTitle.style.fontWeight = "bold";
+        filesTitle.textContent = "Uploaded files:";
+        previewDiv.appendChild(filesTitle);
+
+        const previewContainer = document.createElement("div");
+        previewContainer.style.display = "flex";
+        previewContainer.style.flexWrap = "wrap";
+        previewContainer.style.gap = "8px";
+        previewContainer.style.marginTop = "5px";
+
+        selectedFiles.forEach(file => {
+            const fileContainer = document.createElement("div");
+            fileContainer.style.position = "relative";
+            
+            const userImage = document.createElement("img");
+            userImage.classList.add("chat-image");
+            userImage.style.width = "70px";
+            userImage.style.height = "70px";
+            userImage.style.objectFit = "cover";
+            userImage.style.borderRadius = "4px";
+            userImage.style.border = "1px solid #ddd";
+
+            const fileName = document.createElement("div");
+            fileName.style.fontSize = "10px";
+            fileName.style.textAlign = "center";
+            fileName.style.marginTop = "2px";
+            fileName.style.width = "70px";
+            fileName.style.whiteSpace = "nowrap";
+            fileName.style.overflow = "hidden";
+            fileName.style.textOverflow = "ellipsis";
+            fileName.style.display = "none";
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                userImage.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+
+            fileContainer.appendChild(userImage);
+            fileContainer.appendChild(fileName);
+            previewContainer.appendChild(fileContainer);
+        });
+
+        previewDiv.appendChild(previewContainer);
+    }
+
+    messageDiv.appendChild(previewDiv);
+    chatMessages.appendChild(messageDiv);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+// Helper function to get template by name
+function getTemplateByName(templateName) {
+    for (const category of templateCategories) {
+        const found = category.items.find(item => item.type === templateName);
+        if (found) return found;
+    }
+    return null;
+} 
+
+async function selectTemplate(templateType) {
+    let selectedTemplate = null;
+
+    for (const category of templateCategories) {
+        const found = category.items.find(item => item.type === templateType);
+        if (found) {
+            selectedTemplate = found;
+            break;
+        }
+    }
+
+    if (selectedTemplate) {
+        const isIceCube = templateCategories.some(cat =>
+            cat.name === "Ice Cubes" &&
+            cat.items.some(item => item.type === templateType)
+        );
+
+        const inputField = document.getElementById('user-input');
+        const imageToUse = templateType === "double ludge"
+            ? "static/ludges/real ludge.png"
+            : selectedTemplate.image;
+
+        // ALWAYS send template selection to backend, including ice cubes
+        fetch('/template_selected', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                template: templateType,
+                templateName: selectedTemplate.name,
+                isIceCube: isIceCube // Explicitly tell backend this is an ice cube
+            })
+        }).then(response => response.json())
+            .then(data => {
+                console.log('Template selection acknowledged:', data);
+            })
+            .catch(error => {
+                console.error('Error sending template selection:', error);
+            });
+
+        // Handle file processing for all template types
+        fetch(imageToUse)
+            .then(res => res.blob())
+            .then(blob => {
+                const file = new File([blob], `${selectedTemplate.type}_template.png`, {
+                    type: 'image/png',
+                    lastModified: Date.now()
+                });
+
+                // For ice cubes, clear previous ice cube selections
+                if (isIceCube) {
+                   selectedFiles = [file];
+                }
+                else {
+                   selectedFiles.push(file);
+                }
+
+                updateInputFiles();
+                previewImage();
+
+                if (isIceCube) {
+                    handleIceCubeSelection(selectedTemplate);
+                    // Show different message for ice cubes
+                    addChatMessage(`Selected ${selectedTemplate.name} ice cube. Please upload a logo image to render inside the ice cube`, 'bot');
+                } else {
+                    // Show regular message for other templates
+                    addChatMessage(`Added ${selectedTemplate.name} template`, 'bot');
+                }
+
+                // Hide welcome elements if first selection
+                if (selectedFiles.length === 1) {
+                    const quickPrompts = document.querySelector('.quick-prompts');
+                    if (quickPrompts) quickPrompts.style.display = 'none';
+
+                    const heading = document.getElementById('chat-welcome-heading');
+                    if (heading && !heading.classList.contains('hidden')) {
+                        heading.classList.add('hidden');
+                    }
+                }
+
+
+            })
+            .catch(error => {
+                console.error('Error loading template:', error);
+                addChatMessage('Failed to load the selected template', 'bot');
+            });
+    }
+}
+
+async function sendMessage() {
+    console.log("sendMessage called");
+    console.log("Current ice cube selection:", currentIceCubeSelection);
+    console.log("Selected files count:", selectedFiles.length);
+    console.log("Selected files:", selectedFiles);
+
+    const quickPrompts = document.querySelector('.quick-prompts');
+    if (quickPrompts) quickPrompts.style.display = 'none';
+
     const heading = document.getElementById('chat-welcome-heading');
     if (heading && !heading.classList.contains('hidden')) {
         heading.classList.add('hidden');
     }
-    var userInput = document.getElementById('user-input').value;
-    var chatMessages = document.getElementById('chat-messages');
 
-    // Check for empty user input and images
-    if (userInput.trim() === '' && selectedFiles.length === 0) {
-        return;
-    }
+    const userInput = document.getElementById('user-input').value;
+    const chatMessages = document.getElementById('chat-messages');
 
-    
+    // Check for empty input
+    if (userInput.trim() === '' && selectedFiles.length === 0) return;
 
-    // Display user's message
-    var userMessageDiv = document.createElement("div");
+    // Display user message (including uploaded images if any)
+    const userMessageDiv = document.createElement("div");
     userMessageDiv.classList.add("message", "user-message");
     userMessageDiv.style.display = "flex";
     userMessageDiv.style.alignItems = "flex-start";
     userMessageDiv.style.gap = "15px";
     userMessageDiv.style.marginBottom = "15px";
 
-    var userIcon = document.createElement("span");
-    userIcon.classList.add("icon");
-    userIcon.style.display = "none";
-    userIcon.style.alignItems = "flex-start";
-    userIcon.style.flexShrink = "0";
+    const userMessageContent = document.createElement("div");
+    userMessageContent.style.display = "flex";
+    userMessageContent.style.flexDirection = "column";
+    userMessageContent.style.gap = "10px";
+    userMessageContent.style.maxWidth = "80%";
 
-    var userImg = document.createElement("img");
-    userImg.src = "static/icons/user.png";
-    userImg.alt = "User Icon";
-    userImg.style.width = "40px";
-    userImg.style.height = "40px";
-    userImg.style.objectFit = "contain";
-    
-
-    userIcon.appendChild(userImg);
-
-    var userMessageText = document.createElement("div");
-    userMessageText.classList.add("message-text");
-    userMessageText.textContent = userInput;
-    userMessageText.style.padding = "12px 15px";
-    userMessageText.style.background = "#Fff";
-    userMessageText.style.color = "black";
-    userMessageText.style.borderRadius = "18px";
-    userMessageText.style.maxWidth = "80%";
-
-    userMessageDiv.appendChild(userIcon);
-    userMessageDiv.appendChild(userMessageText);
-
-    // Display uploaded images (if any)
-    if (selectedFiles.length > 0) {
-        const previewContainer = document.createElement("div");
-        previewContainer.style.display = "flex";
-        previewContainer.style.flexWrap = "wrap";
-        previewContainer.style.gap = "5px";
-        previewContainer.style.marginTop = "10px";
-
-        for (let i = 0; i < selectedFiles.length; i++) {
-            const file = selectedFiles[i];
-            var userImage = document.createElement("img");
-            userImage.classList.add("chat-image");
-            userImage.style.maxWidth = "70px";
-            userImage.style.maxHeight = "70px";
-            userImage.style.objectFit = "cover";
-
-            var reader = new FileReader();
-            reader.onload = (function (img) {
-                return function (e) {
-                    img.src = e.target.result;
-                };
-            })(userImage);
-
-            reader.readAsDataURL(file);
-            previewContainer.appendChild(userImage);
-        }
-        userMessageText.appendChild(previewContainer);
+    // Add text if present
+    if (userInput.trim() !== '') {
+        const userMessageText = document.createElement("div");
+        userMessageText.classList.add("message-text");
+        userMessageText.textContent = userInput;
+        userMessageText.style.padding = "12px 15px";
+        userMessageText.style.background = "#FFF";
+        userMessageText.style.color = "black";
+        userMessageText.style.borderRadius = "18px";
+        userMessageContent.appendChild(userMessageText);
     }
 
+    // Add images if present
+    if (selectedFiles.length > 0) {
+        const userImagesContainer = document.createElement("div");
+        userImagesContainer.style.display = "flex";
+        userImagesContainer.style.flexWrap = "wrap";
+        userImagesContainer.style.gap = "10px";
+
+        for (const file of selectedFiles) {
+            const imageWrapper = document.createElement("div");
+            imageWrapper.style.position = "relative";
+
+            const img = document.createElement("img");
+            img.classList.add("chat-image");
+            img.style.width = "100px";
+            img.style.height = "100px";
+            img.style.objectFit = "cover";
+            img.style.borderRadius = "8px";
+            img.style.border = "1px solid #ddd";
+
+            const reader = new FileReader();
+            reader.onload = (e) => img.src = e.target.result;
+            reader.readAsDataURL(file);
+
+            imageWrapper.appendChild(img);
+            userImagesContainer.appendChild(imageWrapper);
+        }
+
+        userMessageContent.appendChild(userImagesContainer);
+    }
+
+    userMessageDiv.appendChild(userMessageContent);
     chatMessages.appendChild(userMessageDiv);
+
 
     // Show typing indicator
     const typingElement = showTypingIndicator();
 
     // Prepare form data
-    var formData = new FormData();
+    const formData = new FormData();
     formData.append("user_input", userInput);
 
-    // Add images to form data if they exist
+    // Prepare the form images
     if (selectedFiles.length > 0) {
         for (let i = 0; i < selectedFiles.length; i++) {
             formData.append("images", selectedFiles[i]);
         }
+    }
+
+    // Add template information if an ice cube was selected
+    if (currentIceCubeSelection) {
+        formData.append("template_type", currentIceCubeSelection);
     }
 
     try {
@@ -501,279 +674,199 @@ userInput.addEventListener('paste', checkInput);
             method: "POST",
             body: formData
         });
-        
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        
-        const data = await response.json();
 
-        // Remove typing indicator
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+
+        const data = await response.json();
         removeTypingIndicator(typingElement);
 
-        // Create bot message container
-        var botMessageDiv = document.createElement("div");
+        // Create bot response container
+        const botMessageDiv = document.createElement("div");
         botMessageDiv.classList.add("message", "bot-message");
         botMessageDiv.style.display = "flex";
         botMessageDiv.style.alignItems = "flex-start";
         botMessageDiv.style.gap = "15px";
         botMessageDiv.style.marginBottom = "15px";
-        
 
-        var botIcon = document.createElement("span");
-        botIcon.classList.add("icon");
-        botIcon.style.display = "none";
-        botIcon.style.alignItems = "flex-start";
-        botIcon.style.flexShrink = "0";
-
-        var botImg = document.createElement("img");
-        botImg.src = "static/icons/intelligence.png";
-        botImg.alt = "Bot Icon";
-        botImg.style.width = "40px";
-        botImg.style.height = "40px";
-        botImg.style.objectFit = "contain";
-    
-
-        botIcon.appendChild(botImg);
-
-        var botMessageText = document.createElement("div");
+        const botMessageText = document.createElement("div");
         botMessageText.classList.add("message-text");
         botMessageText.style.padding = "12px 15px";
         botMessageText.style.background = "#ECECEC";
         botMessageText.style.borderRadius = "18px";
         botMessageText.style.maxWidth = "80%";
 
-        // Handle different response types
-        if (data.response.includes("https://theicebutcher.com/request/")) {
-            // Handle order link case
-            var link = document.createElement("a");
-            link.href = "https://theicebutcher.com/request/";
-            link.target = "_blank";
 
-            var img = document.createElement("img");
-            img.src = "/static/img.PNG";
-            img.classList.add("chat-image");
-            img.style.borderRadius = "12px";
-            img.style.boxShadow = "0 4px 8px rgba(0, 0, 0, 0.2)";
-            img.style.transition = "transform 0.2s ease-in-out";
-
-            link.appendChild(img);
-            botMessageText.appendChild(link);
-        } else {
-            // Show regular text response
-            const formattedResponse = formatResponse(data.response);
-            botMessageText.innerHTML = formattedResponse || "Sorry, I couldn't understand your request.";
-        }
-
-        // Display reference images if present
-        if (data.reference_images && data.reference_images.length > 0) {
-            const imageContainer = document.createElement("div");
-            imageContainer.style.display = "flex";
-            imageContainer.style.flexWrap = "wrap";
-            imageContainer.style.gap = "10px";
-            imageContainer.style.marginTop = "10px";
-
-            data.reference_images.forEach(imageUrl => {
-                const refImage = document.createElement("img");
-                refImage.src = imageUrl;
-                refImage.classList.add("chat-image");
-                refImage.style.cursor = "pointer";
-
-                refImage.onclick = function () {
-                    document.getElementById("user-input").value = `Generate a Double Luge sculpture based on this reference image: ${imageUrl}`;
-                    sendMessage();
-                };
-
-                imageContainer.appendChild(refImage);
-            });
-
-            botMessageText.appendChild(imageContainer);
-        }
-
-        // Handle image generation response
-// ... (previous code remains the same until the image generation response section)
-
-     // ... (previous code remains the same until the image generation response section)
-
-        // Handle image generation response
+        // Display generated image and input image (if applicable)
         if (data.image_url) {
-            const timestamp = new Date().getTime();
-            const randomNum = Math.floor(Math.random() * 1000);
-            const uniqueFilename = `generated_image_${timestamp}_${randomNum}.png`;
+            const combinedContainer = document.createElement("div");
+            combinedContainer.style.display = "flex";
+            combinedContainer.style.gap = "15px";
 
-            // Create main container for image and actions
-            const container = document.createElement("div");
-            container.style.position = "relative"; // For absolute positioning of icons
-            container.style.display = "inline-block";
-            container.style.maxWidth = "100%";
-            botMessageText.style.padding = "12px 15px";
-            botMessageText.style.background = "#fff";
-            botMessageText.style.borderRadius = "18px";
 
-            // Create image element
-            var img = document.createElement("img");
-            img.src = data.image_url;
-            img.classList.add("chat-image");
-            img.alt = `Generated Image ${timestamp}`;
-        
-            img.style.borderRadius = "10px";
-            img.style.display = "block"; // Ensure image is block-level
+            // Display generated image
+            const outputContainer = document.createElement("div");
+            outputContainer.style.display = "flex";
+            outputContainer.style.flexDirection = "column";
+            outputContainer.style.alignItems = "center"; // Center the image and actions
 
-            img.onclick = function () {
-                openModal(data.image_url);
-            };
 
-            // Create action icons container (positioned below image)
+            const outputTitle = document.createElement("div");
+            outputTitle.textContent = currentIceCubeSelection
+                ? "Generated Ice Cube Result:"
+                : "Generated Result:";
+            outputTitle.style.fontWeight = "bold";
+            outputTitle.style.marginBottom = "5px";
+            outputContainer.appendChild(outputTitle);
+
+            const generatedImg = document.createElement("img");
+            generatedImg.src = data.image_url;
+            generatedImg.classList.add("chat-image");
+            generatedImg.style.maxWidth = "300px";
+            generatedImg.style.maxHeight = "300px";
+            generatedImg.style.borderRadius = "10px";
+            generatedImg.style.cursor = "pointer";
+
+
+            // Add action buttons
             const actionsContainer = document.createElement("div");
             actionsContainer.style.display = "flex";
             actionsContainer.style.gap = "10px";
-            actionsContainer.style.marginTop = "5px";
-            actionsContainer.style.alignItems = "center";
-            
+            actionsContainer.style.marginTop = "10px";
 
-            // Download icon
-            const downloadIcon = document.createElement("img");
-            downloadIcon.src = "static/icons/download.png";
-            downloadIcon.style.width = "24px";
-            downloadIcon.style.height = "24px";
-            downloadIcon.style.cursor = "pointer";
-            downloadIcon.style.opacity = "0.7";
-            downloadIcon.title = "Download image";
-            
-            downloadIcon.onmouseenter = function() {
-                this.style.opacity = "1";
-            };
-            downloadIcon.onmouseleave = function() {
-                this.style.opacity = "0.7";
-            };
-            
-            downloadIcon.onclick = function() {
+            // Download button
+            const downloadBtn = createActionButton("Download", "static/icons/download.png", () => {
                 const link = document.createElement("a");
                 link.href = data.image_url;
-                link.download = uniqueFilename;
+                link.download = `generated_${Date.now()}.png`;
                 link.click();
-            };
+            });
 
-            // Select icon
-            const selectIcon = document.createElement("img");
-            selectIcon.src = "static/icons/select.png";
-            selectIcon.style.width = "24px";
-            selectIcon.style.height = "24px";
-            selectIcon.style.cursor = "pointer";
-            selectIcon.style.opacity = "0.7";
-            selectIcon.title = "Select image";
-            
-            selectIcon.onmouseenter = function() {
-                this.style.opacity = "1";
-            };
-            selectIcon.onmouseleave = function() {
-                this.style.opacity = "0.7";
-            };
-            
-            selectIcon.onclick = function() {
+            // Select button
+            const selectBtn = createActionButton("Select", "static/icons/select.png", () => {
                 fetch(data.image_url)
                     .then(res => res.blob())
                     .then(blob => {
-                        const file = new File([blob], uniqueFilename, { type: "image/png" });
-                        selectedFiles = [file];
+                        selectedFiles = [new File([blob], `generated_${Date.now()}.png`, { type: "image/png" })];
                         updateInputFiles();
                         previewImage();
                     });
-            };
-            const expandIcon = document.createElement("img");
-                expandIcon.src = "static/icons/editing.png"; // You need this icon file
-                expandIcon.style.width = "24px";
-                expandIcon.style.height = "24px";
-                expandIcon.style.cursor = "pointer";
-                expandIcon.style.opacity = "0.7";
-                expandIcon.title = "View larger";
+            });
 
-                expandIcon.onmouseenter = function() { this.style.opacity = "1"; };
-                expandIcon.onmouseleave = function() { this.style.opacity = "0.7"; };
+            // Expand button
+            const expandBtn = createActionButton("Expand", "static/icons/editing.png", () => {
+                openModal(data.image_url);
+            });
 
-                expandIcon.onclick = function(e) {
-                    e.stopPropagation();
-                    openModal(data.image_url); // Only opens modal, no other actions
-                };
+            actionsContainer.appendChild(downloadBtn);
+            actionsContainer.appendChild(selectBtn);
+            actionsContainer.appendChild(expandBtn);
 
-            // Add icons to actions container
-            actionsContainer.appendChild(downloadIcon);
-            actionsContainer.appendChild(selectIcon);
-            actionsContainer.appendChild(expandIcon);
+            outputContainer.appendChild(generatedImg);
+            outputContainer.appendChild(actionsContainer);
 
-            // Add image and actions to main container
-            container.appendChild(img);
-            container.appendChild(actionsContainer);
 
-            botMessageText.appendChild(container);
 
-            // Add feedback modal trigger
-            openInlineFeedback(data.image_url);
+            // **Show Input Image Conditionally (Only for Ice Cubes)**
+            const inputContainer = document.createElement("div");
+            inputContainer.style.display = "flex";
+            inputContainer.style.flexDirection = "column";
+            inputContainer.style.alignItems = "center";
+
+            if (currentIceCubeSelection && selectedFiles.length > 0) {
+                const lastUploadedImage = selectedFiles[selectedFiles.length - 1];
+                if (lastUploadedImage) {
+                    console.log(`ice Cube selected, Displaying Input:`, lastUploadedImage);
+
+                    const inputTitle = document.createElement("div");
+                    inputTitle.textContent = "Uploaded Logo:"; // More specific title
+                    inputTitle.style.fontWeight = "bold";
+                    inputTitle.style.marginBottom = "5px";
+                    inputContainer.appendChild(inputTitle);
+
+
+                    const img = document.createElement("img");
+                    img.classList.add("chat-image");
+                    img.style.width = "auto";
+                    img.style.height = "300";
+                    img.style.objectFit = "cover";
+                    img.style.borderRadius = "8px";
+                    img.style.border = "1px solid #ddd";
+
+                    const fileName = document.createElement("div");
+                    fileName.textContent = lastUploadedImage.name.length > 12 ? lastUploadedImage.name.substring(0, 12) + "..." : lastUploadedImage.name;
+                    fileName.style.fontSize = "10px";
+                    fileName.style.textAlign = "center";
+                    fileName.style.marginTop = "5px";
+                    fileName.style.display = "none";
+
+                    const reader = new FileReader();
+                    reader.onload = (e) => img.src = e.target.result;
+                    reader.readAsDataURL(lastUploadedImage);
+
+                    inputContainer.appendChild(img);
+                    inputContainer.appendChild(fileName);
+                }
+
+            }
+
+
+            combinedContainer.appendChild(outputContainer);
+            if (inputContainer.children.length > 0) {
+                combinedContainer.appendChild(inputContainer);
+            }
+            botMessageText.appendChild(combinedContainer);
+        }
+        else {
+            botMessageText.innerHTML = data.response || "Sorry, I couldn't understand your request.";
+
         }
 
-// ... (rest of the code remains the same)
-// ... (rest of the code remains the same)
 
-        // Complete bot message assembly
-        botMessageDiv.appendChild(botIcon);
+
         botMessageDiv.appendChild(botMessageText);
         chatMessages.appendChild(botMessageDiv);
 
-    } catch (error) {
-        // Remove typing indicator on error
-        removeTypingIndicator(typingElement);
-        
-        // Create error message
-        const errorDiv = document.createElement('div');
-        errorDiv.className = 'message bot-message';
-        errorDiv.style.display = "flex";
-        errorDiv.style.alignItems = "flex-start";
-        errorDiv.style.gap = "15px";
-        
-        const errorIcon = document.createElement("span");
-        errorIcon.className = "icon";
-        errorIcon.style.display = "flex";
-        errorIcon.style.alignItems = "flex-start";
-        errorIcon.style.flexShrink = "0";
-        
-        const errorImg = document.createElement("img");
-        errorImg.src = "static/icons/intelligence.png";
-        errorImg.alt = "Bot Icon";
-        errorImg.style.width = "40px";
-        errorImg.style.height = "40px";
-        errorImg.style.objectFit = "contain";
-        
-        errorIcon.appendChild(errorImg);
-        
-        const errorText = document.createElement("div");
-        errorText.className = "message-text";
-        errorText.style.padding = "12px 15px";
-        errorText.style.background = "#fff";
-        errorText.style.borderRadius = "18px";
-        errorText.style.maxWidth = "80%";
-        errorText.textContent = "Sorry, there was an error processing your request.";
-        
-        errorDiv.appendChild(errorIcon);
-        errorDiv.appendChild(errorText);
-        chatMessages.appendChild(errorDiv);
-        
-        console.error("Error:", error);
-    } finally {
-        // Clear the text input and image previews
-        document.getElementById("user-input").value = "";
-        clearSelectedFiles();
-        
         // Scroll to bottom
         chatMessages.scrollTop = chatMessages.scrollHeight;
+
+    } catch (error) {
+        removeTypingIndicator(typingElement);
+        console.error("Error:", error);
+        addChatMessage("Sorry, there was an error processing your request.", "bot");
+    } finally {
+        document.getElementById("user-input").value = "";
+        clearSelectedFiles();
     }
-
-
-
-
-
-
-    
 }
+// Helper function to create action buttons (unchanged)
+function createActionButton(title, iconSrc, onClick) {
+    const button = document.createElement("div");
+    button.style.display = "flex";
+    button.style.alignItems = "center";
+    button.style.gap = "5px";
+    button.style.cursor = "pointer";
+    button.style.padding = "5px 8px";
+    button.style.background = "#f5f5f5";
+    button.style.borderRadius = "5px";
+    button.style.fontSize = "12px";
+    button.onclick = onClick;
+
+    const icon = document.createElement("img");
+    icon.src = iconSrc;
+    icon.style.width = "16px";
+    icon.style.height = "16px";
+
+    const text = document.createElement("span");
+    text.textContent = title;
+
+    button.appendChild(icon);
+    button.appendChild(text);
+    return button;
+}
+
+
+
+
 // Event listeners for drawing
 canvas.addEventListener('mousedown', startPosition);
 canvas.addEventListener('mousemove', draw);
@@ -1337,7 +1430,6 @@ function submitFeedback() {
 // Event listeners for inline feedback
 document.getElementById('submitFeedbackBtn').addEventListener('click', submitFeedback);
 document.querySelector('.close-feedback').addEventListener('click', closeInlineFeedback);
-
 
 
 
