@@ -122,76 +122,7 @@ let currentIceCubeSelection = null;
 
 // Modify the selectTemplate function (only adding ice cube logic)
 // Modify the selectTemplate function
-function selectTemplate(templateType) {
-    // Find the selected template
-    let selectedTemplate = null;
-    for (const category of templateCategories) {
-        const found = category.items.find(item => item.type === templateType);
-        if (found) {
-            selectedTemplate = found;
-            break;
-        }
-    }
 
-    if (selectedTemplate) {
-        const isIceCube = templateCategories.find(cat => cat.name === "Ice Cubes")?.items.some(item => item.type === templateType);
-        const inputField = document.getElementById('user-input');
-        
-        // Clear ice cube tag if selecting non-ice-cube template
-        if (!isIceCube && currentIceCubeSelection) {
-            const oldTag = `#${currentIceCubeSelection.toUpperCase()}`;
-            inputField.value = inputField.value.replace(oldTag, '').trim();
-            currentIceCubeSelection = null;
-        }
-        
-        // Handle ice cube selection
-        if (isIceCube) {
-            // If clicking same ice cube again, deselect it
-            if (currentIceCubeSelection === selectedTemplate.type) {
-                currentIceCubeSelection = null;
-                inputField.value = inputField.value.replace(`#${selectedTemplate.type.toUpperCase()}`, '').trim();
-            } 
-            // If selecting different ice cube
-            else {
-                // Remove any existing ice cube tag
-                if (currentIceCubeSelection) {
-                    const oldTag = `#${currentIceCubeSelection.toUpperCase()}`;
-                    inputField.value = inputField.value.replace(oldTag, '').trim();
-                }
-                
-                // Add new ice cube tag
-                currentIceCubeSelection = selectedTemplate.type;
-                const newTag = `#${selectedTemplate.type.toUpperCase()}`;
-                
-                // Add tag if not already present
-                if (!inputField.value.includes(newTag)) {
-                    inputField.value = (inputField.value.trim() + ' ' + newTag).trim();
-                }
-            }
-        }
-
-        // ORIGINAL TEMPLATE SELECTION LOGIC (unchanged)
-        fetch(selectedTemplate.image)
-            .then(res => res.blob())
-            .then(blob => {
-                const file = new File([blob], `${selectedTemplate.type}_template.png`, {
-                    type: 'image/png',
-                    lastModified: Date.now()
-                });
-
-                selectedFiles = [file];
-                updateInputFiles();
-                previewImage();
-                addChatMessage(`You selected the ${selectedTemplate.name} template`, 'bot');
-                document.querySelector('.dropup-content').style.display = 'none';
-                dropupOpen = false;
-            })
-            .catch(error => {
-                console.error('Error loading template:', error);
-                addChatMessage('Failed to load the selected template', 'bot');
-            });
-    }
-}
 // Add this to prevent deleting the ice cube tag
 document.getElementById('user-input').addEventListener('keydown', function(e) {
     if (!currentIceCubeSelection) return;
