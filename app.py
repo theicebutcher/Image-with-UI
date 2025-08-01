@@ -280,7 +280,7 @@ def submit_feedback():
         }
 
         # Send to Google Apps Script web app
-        script_url = 'https://script.google.com/macros/s/AKfycbzKOxVD9ju-bewiQuCZS8hHByJ2JfU0mhhDbQFxWYIaQemRPgeJLtrvbOC8G-yf3vmg/exec'  # Replace with your web app URL
+        script_url = 'https://script.google.com/macros/s/AKfycbyTNx59ui4DrCGQ7G87Z7ZTUIbUCIHbe7r9en33IuZQMY8jgyIMw2ElegY_dxQ_4kSo5Q/exec'  # Replace with your web app URL
         response = requests.post(script_url, json=feedback_data, timeout=30)
         print(f"Google Apps Script response status: {response.status_code}, text: {response.text}")  # Debug log
 
@@ -319,10 +319,10 @@ ICE_CUBE_PROMPTS = {
     "Paper": """
     "task": "add the image inside the icecube, ",
     "instructions": 
-        "effect": "it should look like a colored printed paper is frozen into the icecube, the paper should be colored with some white outline to the logo and should be in center of the cube",
+        "effect": "it should look like a colored printed paper is frozen into the icecube, the Logo should be colored with some white outline and transparent background and should be in center of the cube",
         "Strict": "the image should be placed into the ice few centimeters in some depth",
         "Extra":"remove any background of the image before adding it to the icecube",
-        "ice":"ice should be crystal clear, no bubbles or clouds"
+        "ice":"ice should be crystal clear, no bubbles or clouds, increase the size of the cube if the logo doesnot fit"
     """,
     "Snofilled+paper": """
     "task": "add the image into the center of the icecube ",
@@ -502,12 +502,17 @@ def chatbot():
             with open(combined_path, "rb") as image_file:
                 result = client.images.edit(
                     model="gpt-image-1",
+                    size="1024x1024",
                     image=image_file,
                     prompt=image_generation_prompt,
+                    
+                
+                    
                 )
             
             output_id = uuid.uuid4().hex[:8]
             output_filename = f"sculpture_{output_id}.png"
+            print("Image Created")
             output_path = os.path.join(app.config["UPLOAD_FOLDER"], output_filename)
 
             image_bytes = base64.b64decode(result.data[0].b64_json)
@@ -523,7 +528,7 @@ def chatbot():
             session.modified = True
 
             return jsonify({
-                "response": "Here's your custom ice sculpture:",
+                # "response": "Here's your custom ice sculpture:",
                 "image_url": f"/static/uploads/{output_filename}"
             })
         except Exception as e:
@@ -575,10 +580,14 @@ def chatbot():
     """
             result = client.images.generate(
                 model="gpt-image-1",
+                size="1024x1024",
                 prompt=image_generation_prompt,
+                
+                
             )
 
             output_filename = f"generated_{generation_id}.png"
+            print("Image Created")
             output_path = os.path.join(app.config["UPLOAD_FOLDER"], output_filename)
 
             image_bytes = base64.b64decode(result.data[0].b64_json)
