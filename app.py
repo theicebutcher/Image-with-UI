@@ -11,7 +11,11 @@ import io
 import logging
 import requests
 import datetime
-
+from flask import Flask, request, send_file, jsonify, render_template
+from google import genai
+from google.genai import types
+import pathlib
+from werkzeug.utils import secure_filename  # Add this import at the top
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
 
@@ -280,7 +284,7 @@ def submit_feedback():
         }
 
         # Send to Google Apps Script web app
-        script_url = 'https://script.google.com/macros/s/AKfycbyTNx59ui4DrCGQ7G87Z7ZTUIbUCIHbe7r9en33IuZQMY8jgyIMw2ElegY_dxQ_4kSo5Q/exec'  # Replace with your web app URL
+        script_url = 'https://script.google.com/macros/s/AKfycbzKOxVD9ju-bewiQuCZS8hHByJ2JfU0mhhDbQFxWYIaQemRPgeJLtrvbOC8G-yf3vmg/exec'  # Replace with your web app URL
         response = requests.post(script_url, json=feedback_data, timeout=30)
         print(f"Google Apps Script response status: {response.status_code}, text: {response.text}")  # Debug log
 
@@ -358,6 +362,86 @@ def handle_template_selection():
     
     return jsonify({"status": "success", "message": "Template selection received"})
 
+
+
+client2 = genai.Client(api_key="AIzaSyCPw79xvCt4ZNOXJh4ORZ0OBZ4S7bZka7U")
+MODEL_ID = "gemini-2.0-flash-exp"
+
+
+@app.route('/extract_logo', methods=['POST'])
+def extract_logo():
+    try:
+        if 'file' not in request.files:
+            return jsonify({"error": "No file uploaded"}), 400
+
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({"error": "No file selected"}), 400
+
+        # Securely save the uploaded file (optional, but recommended)
+        filename = secure_filename(file.filename)
+        upload_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        try:
+            file.save(upload_path)
+            print(f"File saved successfully to {upload_path}")  # Confirm
+        except Exception as e:
+            print(f"Error saving file: {e}")
+            return jsonify({"error": f"Error saving file: {e}"}), 500
+
+
+        # Print input image path (in-memory file, so just print filename)
+        print("Received file:", file.filename)
+
+        #image = Image.open(file) #Don't open in memory, load it from the uploaded file, if it fails there is something wrong with the image file
+        try:
+            image = Image.open(upload_path)
+        except Exception as e:
+            print(f"Error opening image with PIL: {e}")
+            return jsonify({"error": f"Error opening image with PIL: {e}"}), 400
+
+
+
+        # Prepare prompt
+        prompt = "Extract the logo from this image. and display on a white background"  # More explicit prompt
+        print(prompt)
+
+        # Generate content with the prompt and image
+        response = client2.models.generate_content(  # Using client.models.generate_content
+            model=MODEL_ID,
+            contents=[
+                prompt,
+                image
+            ],
+             config=types.GenerateContentConfig(
+            response_modalities=['Text', 'Image']
+        )
+        )
+
+        # Extract and return the image (adapted from your edit_image_with_prompt)
+        for part in response.candidates[0].content.parts:
+            if part.inline_data is not None:
+                data = part.inline_data.data
+                # Debug print the type and length
+                print(f"Data type: {type(data)}")
+                print(f"Data length: {len(data)}")
+
+                logo_filename = "extracted_logo.png"
+                logo_filepath = os.path.join(app.config['UPLOAD_FOLDER'], logo_filename)
+                try:
+                    pathlib.Path(logo_filepath).write_bytes(data)  # Write as bytes
+                    return send_file(logo_filepath, mimetype='image/png')
+                except Exception as e:
+                    print(f"Error writing image to file: {e}")
+                    return jsonify({"error": f"Error writing image to file: {e}"}), 500
+
+        return jsonify({"error": "No image returned from model"}), 500
+
+
+    except Exception as e:
+        print("Error extracting logo:", str(e))
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/chatbot", methods=["POST"])
 def chatbot():
     # Initialize conversation history if it doesn't exist
@@ -377,10 +461,11 @@ def chatbot():
     image_generation_prompt = None
     
     if selected_ice_cube:
-        image_generation_prompt = ICE_CUBE_PROMPTS.get(selected_ice_cube, "")
-        print(f"Using {selected_ice_cube} ice cube prompt: {image_generation_prompt}")
-        # Clear the selection after using it
+        ice_prompt = ICE_CUBE_PROMPTS.get(selected_ice_cube, "")
+        image_generation_prompt = f"{ice_prompt}\nUSER INPUT:\n{user_input}"
+        print(f"Using {selected_ice_cube} ice cube prompt with user input:\n{image_generation_prompt}")
         session.pop('selected_ice_cube', None)
+
     else:
     # Determine which prompt to use based on prefix
      image_generation_prompt = None
@@ -446,7 +531,9 @@ def chatbot():
            - Maintain EXACT shape, proportions, and details from the reference image
            - Do NOT alter, add, or remove any elements of the sculpture
            - Preserve all original contours and features precisely
-        
+           - Sculpture should be large, around 6 to 7 feet tall or wide accordingly
+           - dark and light blue color in the image always means ice
+
         2. MATERIAL PROPERTIES:
            - Render as crystal-clear, see-through ice
            - Include realistic light refraction and subtle imperfections
@@ -475,7 +562,7 @@ def chatbot():
         5.IMAGE QUALITY:
          -Always create an HD high resolution image, captured by a high resolution camera.
 
-        6.IMAGE INSIDE SCULPTURES:
+        6.IF IMAGE(sticker) on SCULPTURES:
          -If there is an image present in a sculpture design, then:
         "effect": "if any detail is shown in the image that is other that blue color, then it should look like a paper sticker is pasted on the ice sculpture, the paper should be colored, and not made of ice",
         "important": Do not include the logo of the company in the sculpture which says 'ice butcher, purveyors of perfect ice'
@@ -502,7 +589,7 @@ def chatbot():
             with open(combined_path, "rb") as image_file:
                 result = client.images.edit(
                     model="gpt-image-1",
-                    size="1024x1024",
+                    
                     image=image_file,
                     prompt=image_generation_prompt,
                     
@@ -580,7 +667,7 @@ def chatbot():
     """
             result = client.images.generate(
                 model="gpt-image-1",
-                size="1024x1024",
+                
                 prompt=image_generation_prompt,
                 
                 
