@@ -5,3 +5,4 @@ rapidfuzz
 flask-cors
 Pillow
 requests
+google-genai
