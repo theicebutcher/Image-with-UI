@@ -358,11 +358,7 @@ function showTypingIndicator() {
     return typingDiv;
 }
   
-  function removeTypingIndicator(typingElement) {
-    if (typingElement && typingElement.parentNode) {
-      typingElement.parentNode.removeChild(typingElement);
-    }
-  }
+ 
   // Add these helper functions to your JavaScript
 
   
@@ -584,11 +580,19 @@ async function sendMessage() {
         heading.classList.add('hidden');
     }
 
+    // 1. CAPTURE the input values *before* clearing
     const userInput = document.getElementById('user-input').value;
+    const capturedFiles = [...selectedFiles]; // Create a copy!
+
+    // 2. Immediately CLEAR the input elements and preview
+    document.getElementById('image-preview-container').innerHTML = '';
+    selectedFiles.length = 0;  // Clear the *original* selectedFiles array
+    document.getElementById("user-input").value = "";
+
     const chatMessages = document.getElementById('chat-messages');
 
     // Check for empty input
-    if (userInput.trim() === '' && selectedFiles.length === 0) return;
+    if (userInput.trim() === '' && capturedFiles.length === 0) return;
 
     // Display user message (including uploaded images if any)
     const userMessageDiv = document.createElement("div");
@@ -617,13 +621,13 @@ async function sendMessage() {
     }
 
     // Add images if present
-    if (selectedFiles.length > 0) {
+    if (capturedFiles.length > 0) {
         const userImagesContainer = document.createElement("div");
         userImagesContainer.style.display = "flex";
         userImagesContainer.style.flexWrap = "wrap";
         userImagesContainer.style.gap = "10px";
 
-        for (const file of selectedFiles) {
+        for (const file of capturedFiles) {
             const imageWrapper = document.createElement("div");
             imageWrapper.style.position = "relative";
 
@@ -650,6 +654,7 @@ async function sendMessage() {
     chatMessages.appendChild(userMessageDiv);
 
 
+
     // Show typing indicator
     const typingElement = showTypingIndicator();
 
@@ -658,9 +663,9 @@ async function sendMessage() {
     formData.append("user_input", userInput);
 
     // Prepare the form images
-    if (selectedFiles.length > 0) {
-        for (let i = 0; i < selectedFiles.length; i++) {
-            formData.append("images", selectedFiles[i]);
+    if (capturedFiles.length > 0) {
+        for (let i = 0; i < capturedFiles.length; i++) {
+            formData.append("images", capturedFiles[i]);
         }
     }
 
@@ -721,8 +726,8 @@ async function sendMessage() {
             const generatedImg = document.createElement("img");
             generatedImg.src = data.image_url;
             generatedImg.classList.add("chat-image");
-            generatedImg.style.maxWidth = "300px";
-            generatedImg.style.maxHeight = "300px";
+            generatedImg.style.Width = "500px";
+            generatedImg.style.Height = "auto";
             generatedImg.style.borderRadius = "10px";
             generatedImg.style.cursor = "pointer";
 
@@ -757,57 +762,147 @@ async function sendMessage() {
                 openModal(data.image_url);
             });
 
+
+
+            // **Conditional "Extract Logo" Button**
+            let extractLogoBtn = null; // Initialize to null
+
+            if (currentIceCubeSelection && data.image_url) { // Check if ice cube was selected and image_url exists
+                extractLogoBtn = createActionButton("Extract Logo", "static/icons/crop.png", () => {
+                    // Check if data.image_url exists again inside the callback (for safety)
+                    if (!data.image_url) {
+                        addChatMessage("No generated image available for logo extraction.", "bot");
+                        return;
+                    }
+
+                    // Function to convert URL to File object
+                    const urlToFile = async (url, filename, mimeType) => {
+                        try {
+                            const res = await fetch(url);
+                            const buf = await res.arrayBuffer();
+                            const contentType = res.headers.get('content-type') || mimeType; // Use response headers
+                            return new File([buf], filename, { type: contentType });
+                        } catch (err) {
+                            console.error("Error fetching or converting URL to file:", err);
+                            throw err; // Re-throw to be caught in the main try/catch block
+                        }
+
+                    }
+
+                    // Use async/await to handle the conversion and proceed only after the file is created
+                    (async () => {
+                        try {
+                            // Use `png` as default in case type detection fails
+                            const mimeType = 'image/png';
+                            const filename = `generated_ice_cube_${Date.now()}.${mimeType.split('/')[1] || 'png'}`;
+
+                            const file = await urlToFile(data.image_url, filename, mimeType);
+
+                            const formData = new FormData();
+                            formData.append("file", file); // Append the *converted* file
+
+                            console.log("Sending generated image for logo extraction:", file);
+                            const logoTypingElement = showTypingIndicator(); // <-- show spinner
+
+
+                            fetch('/extract_logo', {
+                                method: 'POST',
+                                body: formData
+                            })
+                                .then(response => {
+                                    if (!response.ok) {
+                                        console.error("Error response from /extract_logo:", response);
+                                        throw new Error(`HTTP error! status: ${response.status}`);
+                                    }
+                                    return response.blob();
+                                })
+                                .then(blob => {
+                                    const logoUrl = URL.createObjectURL(blob);
+
+                                    // Create a new message with the extracted logo
+                                    const logoMessageDiv = document.createElement("div");
+                                    logoMessageDiv.classList.add("message", "bot-message");
+                                    logoMessageDiv.style.display = "flex";
+                                    logoMessageDiv.style.alignItems = "flex-start";
+                                    logoMessageDiv.style.gap = "15px";
+                                    logoMessageDiv.style.marginBottom = "15px";
+
+                                    const logoMessageContent = document.createElement("div");
+                                    logoMessageContent.classList.add("message-text");
+                                    logoMessageContent.style.padding = "12px 15px";
+                                    logoMessageContent.style.background = "#ECECEC";
+                                    logoMessageContent.style.borderRadius = "18px";
+                                    logoMessageContent.style.maxWidth = "80%";
+
+                                    const logoTitle = document.createElement("div");
+                                    logoTitle.textContent = "Extracted Logo:";
+                                    logoTitle.style.fontWeight = "bold";
+                                    logoTitle.style.marginBottom = "10px";
+                                    logoMessageContent.appendChild(logoTitle);
+
+                                    const extractedLogoImg = document.createElement("img");
+                                    extractedLogoImg.src = logoUrl;
+                                    extractedLogoImg.classList.add("chat-image");
+                                    extractedLogoImg.style.width = "500px";
+                                    extractedLogoImg.style.height = "auto";
+                                    extractedLogoImg.style.borderRadius = "8px";
+                                    extractedLogoImg.style.border = "1px solid #ddd";
+                                    logoMessageContent.appendChild(extractedLogoImg);
+
+                                    const downloadLogoBtn = createActionButton("Download Logo", "static/icons/download.png", () => {
+                                        const link = document.createElement("a");
+                                        link.href = logoUrl;
+                                        link.download = `extracted_logo_${Date.now()}.png`;
+                                        link.click();
+                                    });
+                                    logoMessageContent.appendChild(downloadLogoBtn);
+                                    
+                                    
+
+                                    logoMessageDiv.appendChild(logoMessageContent);
+                                    chatMessages.appendChild(logoMessageDiv);
+
+                                    removeTypingIndicator(logoTypingElement);
+
+                                    // Scroll to bottom
+                                    chatMessages.scrollTop = chatMessages.scrollHeight;
+                                })
+                                .catch(error => {
+                                    
+                                    console.error("Error triggering logo extraction:", error);
+                                    addChatMessage("Error extracting logo. Please try again.", "bot");
+                                });
+
+                        } catch (err) {
+                            console.error("Error creating file from generated URL:", err);
+                            addChatMessage("Error processing image. Please try again.", "bot");
+                        }
+                    })();
+                });
+
+                // Append the button only if `currentIceCubeSelection` is true
+                actionsContainer.appendChild(extractLogoBtn);
+            }
+
+
+
             actionsContainer.appendChild(downloadBtn);
             actionsContainer.appendChild(selectBtn);
             actionsContainer.appendChild(expandBtn);
+
+
+
 
             outputContainer.appendChild(generatedImg);
             outputContainer.appendChild(actionsContainer);
 
 
-
-            // **Show Input Image Conditionally (Only for Ice Cubes)**
+            // Conditionally show the button if applicable
             const inputContainer = document.createElement("div");
             inputContainer.style.display = "flex";
             inputContainer.style.flexDirection = "column";
             inputContainer.style.alignItems = "center";
 
-            if (currentIceCubeSelection && selectedFiles.length > 0) {
-                const lastUploadedImage = selectedFiles[selectedFiles.length - 1];
-                if (lastUploadedImage) {
-                    console.log(`ice Cube selected, Displaying Input:`, lastUploadedImage);
-
-                    const inputTitle = document.createElement("div");
-                    inputTitle.textContent = "Uploaded Logo:"; // More specific title
-                    inputTitle.style.fontWeight = "bold";
-                    inputTitle.style.marginBottom = "5px";
-                    inputContainer.appendChild(inputTitle);
-
-
-                    const img = document.createElement("img");
-                    img.classList.add("chat-image");
-                    img.style.width = "auto";
-                    img.style.height = "300";
-                    img.style.objectFit = "cover";
-                    img.style.borderRadius = "8px";
-                    img.style.border = "1px solid #ddd";
-
-                    const fileName = document.createElement("div");
-                    fileName.textContent = lastUploadedImage.name.length > 12 ? lastUploadedImage.name.substring(0, 12) + "..." : lastUploadedImage.name;
-                    fileName.style.fontSize = "10px";
-                    fileName.style.textAlign = "center";
-                    fileName.style.marginTop = "5px";
-                    fileName.style.display = "none";
-
-                    const reader = new FileReader();
-                    reader.onload = (e) => img.src = e.target.result;
-                    reader.readAsDataURL(lastUploadedImage);
-
-                    inputContainer.appendChild(img);
-                    inputContainer.appendChild(fileName);
-                }
-
-            }
 
 
             combinedContainer.appendChild(outputContainer);
@@ -834,8 +929,6 @@ async function sendMessage() {
         console.error("Error:", error);
         addChatMessage("Sorry, there was an error processing your request.", "bot");
     } finally {
-        document.getElementById("user-input").value = "";
-        clearSelectedFiles();
     }
 }
 // Helper function to create action buttons (unchanged)
