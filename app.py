@@ -305,7 +305,7 @@ def submit_feedback():
     
 ICE_CUBE_PROMPTS = {
     "Snofilled": """
-    "task": "add the image into the center of the icecube",
+    "task": "add the logo image into the center of the icecube",
     "instructions": 
         "effect": "Create a carved snow-filled appearance inside the ice sculpture, the image should not be colored and it should be engraved into the icecube with some depth",
         "ice":"ice should be crystal clear, no bubbles or clouds"
@@ -313,7 +313,7 @@ ICE_CUBE_PROMPTS = {
         "Extra":"remove any background of the image before adding it to the icecube"
     """,
     "Colored": """
-    "task": "add the image styles onto the icecube, ", 
+    "task": "add the logo image into the center of the icecube ", 
     "instructions": 
         "effect": "it should look like the ice is colored and not etched",
         "Strict": "the image should be engraved into the ice few centimeters with some depth",
@@ -441,6 +441,25 @@ def extract_logo():
         print("Error extracting logo:", str(e))
         return jsonify({"error": str(e)}), 500
 
+def get_logo_instructions(effect_type):
+    shared = {
+        "task": "add the image into the sculpture",
+        "instructions": {
+            "strict": "The logo must be embedded a few centimeters into the ice and should not form the sculpture itself.",
+            "processing": "Remove any background of the image before embedding it into the ice cube.",
+            "clarification": "If a blue image is provided, it is always ice and should be used as the ice sculpture, not as a logo. Blue images are never logos or image overlays—they are the ice.",
+           "ice_structure": "The ice sculpture must precisely match the input image, with 100% accuracy. Do not add, remove, or modify any elements. Avoid including any extra components made of ice or anything not explicitly requested in the input."
+        }
+    }
+
+    effects = {
+        "Snofilled": "Create a carved snow-filled appearance inside the ice sculpture. The image should not be colored and should be engraved with visible depth inside the ice cube.",
+        "Colored": "It should look like the ice is colored from the logo, not etched. The image appears as colored pigmentation embedded inside the ice.",
+        "Paper": "It should look like a colored printed paper is frozen inside the ice cube. The logo should be colored, have a slight white outline, and a transparent background, and should be centered within the cube."
+    }
+
+    shared["instructions"]["effect"] = effects[effect_type]
+    return shared
 
 @app.route("/chatbot", methods=["POST"])
 def chatbot():
@@ -465,6 +484,7 @@ def chatbot():
         image_generation_prompt = f"{ice_prompt}\nUSER INPUT:\n{user_input}"
         print(f"Using {selected_ice_cube} ice cube prompt with user input:\n{image_generation_prompt}")
         session.pop('selected_ice_cube', None)
+        
 
     else:
     # Determine which prompt to use based on prefix
@@ -520,66 +540,87 @@ def chatbot():
                 return jsonify({"response": f"Error combining images: {str(e)}"})
         else:
             return jsonify({"response": "No valid images provided"})
+        
+
 
         # Use the appropriate prompt based on prefix
+       
+        image_generation_dict = {
+            "user_input": user_input,
+            "adding_logo_if_mentioned_else_skip": {
+                "Snofilled": get_logo_instructions("Snofilled"),
+                "Colored": get_logo_instructions("Colored"),
+                "Paper": get_logo_instructions("Paper")
+            },
+            "Sculpture_instructions": {
+                "sculpture_preservation": {
+                    "shape": "Maintain EXACT shape, proportions, and details from the reference image",
+                    "alterations": "Do NOT alter, add, or remove any elements of the sculpture",
+                    "contours": "Preserve all original contours and features precisely",
+                    "size": "Sculpture should be large, around 6 to 7 feet tall or wide accordingly",
+                    "color_coding": "Dark and light blue color in the image always means ice"
+                },
+                "material_properties": {
+                    "rendering": "Render as crystal-clear, see-through ice",
+                    "lighting": "Include realistic light refraction and subtle imperfections",
+                    "surface": "Surface should appear smooth and polished"
+                },
+                "background_environment": {
+                    "placement": "Place the sculpture on a wooden table",
+                    "setting": "Environment should be realistic, preferably a country club"
+                },
+                "prohibited_modifications": [
+                    "DO NOT ADD ANYTHING THAT IS NOT REQUESTED BY USER",
+                    "NO changes to the sculpture structure",
+                    "NO additional decorative elements",
+                    "NO human figures or living creatures",
+                    "NO elements detached from the sculpture even if requested",
+                    "NO small details",
+                    "NO foggy ice",
+                    "NO extra ice base for the sculpture",
+                    "NO changes in the sculpture itself allowed",
+                    "DO NOT change the sculpture design",
+                    "NO extra ice pieces on the sculpture",
+                    "Place the sculpture directly on the table without extra ice base",
+                    "DO NOT add any company logos (e.g., 'ice butcher, purveyors of perfect ice')"
+                ],
+                "image_quality": "Always create an HD high-resolution image captured by a high-resolution camera",
+                "sculpture_image_rules": {
+                    "stickers": {
+                        "condition": "If any detail in the sculpture is other than blue",
+                        "appearance": "It should look like a colored paper sticker pasted on the ice, not made of ice"
+                    }
+                },
+                "modular_components": {
+                    "topper": {
+                        "condition": "If 'TOPPER' is mentioned in the image",
+                        "instruction": "Place it on top of the sculpture, do NOT add the text 'TOPPER'",
+                        "restriction": "Do NOT modify the base sculpture in any way"
+                    },
+                    "topper_with_logo": {
+                        "condition": "If 'TOPPER(WITH LOGO)' is mentioned in the image",
+                        "instruction": "Place it on top of the sculpture with a centered placeholder logo, but do NOT add a logo unless provided",
+                        "restriction": "Do NOT modify the base sculpture in any way"
+                    },
+                    "base": {
+                        "condition": "If 'BASE' is mentioned in the image",
+                        "instruction": "Place it directly at the bottom of the sculpture, do NOT add the text 'BASE'",
+                        "restriction": "Do NOT modify the base sculpture in any way"
+                    }
+                },
+                "reminders": [
+                    "DO NOT add any text labels such as 'TOPPER', 'BASE', or 'TOPPER(WITH LOGO)' in the image",
+                    "THE SCULPTURE MUST MATCH EXACTLY WITH THE ORIGINAL IMAGE WITHOUT ANY MODIFICATIONS"
+                ]
+            }          
+}
+          
         if not image_generation_prompt:
-            image_generation_prompt = f"""
-        USER INPUT:
-        {user_input}
-        STRICT INSTRUCTIONS FOR ICE SCULPTURE GENERATION:
-        1. SCULPTURE PRESERVATION:
-           - Maintain EXACT shape, proportions, and details from the reference image
-           - Do NOT alter, add, or remove any elements of the sculpture
-           - Preserve all original contours and features precisely
-           - Sculpture should be large, around 6 to 7 feet tall or wide accordingly
-           - dark and light blue color in the image always means ice
+            image_generation_prompt = json.dumps(image_generation_dict, indent=4)
 
-        2. MATERIAL PROPERTIES:
-           - Render as crystal-clear, see-through ice
-           - Include realistic light refraction and subtle imperfections
-           - Surface should appear smooth and polished
-
-        3. BACKGROUND AND ENVIRONMENT
-            -place the sculpture on a wooden table in a realistic environment or a country club.
-            
+        #Convert dictionary to a nicely formatted string prompt
         
-        
-        4. PROHIBITED MODIFICATIONS:
-           - NO changes to the sculpture structure
-           - NO additional decorative elements
-           - NO human figures or living creatures
-           - no elements detached from the sculpture even if requested
-           - no small details
-           - no foggy ice
-           - no extra ice base for the sculpture..
-           - no changes in the sculpture itself allowed
-           - do not change the sculpture design
-           - no extra ice pieces on the sculpture
-           - place the sculpture directly on the table and no extra ice base 
-           - no extra ice base
-           - do not add extra ice base
 
-        5.IMAGE QUALITY:
-         -Always create an HD high resolution image, captured by a high resolution camera.
-
-        6.IF IMAGE(sticker) on SCULPTURES:
-         -If there is an image present in a sculpture design, then:
-        "effect": "if any detail is shown in the image that is other that blue color, then it should look like a paper sticker is pasted on the ice sculpture, the paper should be colored, and not made of ice",
-        "important": Do not include the logo of the company in the sculpture which says 'ice butcher, purveyors of perfect ice'
-
-        7.EXTRA:
-
-         -IF 'TOPPER' is mentioned in an image, then it means that it will be placed on top of the sculpture at the very top (BUT DONT ADD THE 'TOPPER' TEXT).
-         -IF 'TOPPER(WITH LOGO)' is mentioned in an image, then it means that it will be placed on top of the sculpture at the very top with a logo in the center of the topper, DO NOT ADD A LOGO BY YOURSELF IF IT IS NOT PROVIDED, JUST KEEP IT EMPTY.
-         CRUCIAL:(REMEMBER NOT TO MODIFY THE BASE SCULPTURE EVEN A LITTLE BIT, THE SCULPTURE SHOULD MATCH EXACTLY LIKE IN THE IMAGE, NO EXTRA MODIFICATIONS ALLOWED, JUST PLACE THE TOPPER ON TOP WITHOUT CHANGING THE SCULPTURE ITSELF.)
-
-         -If "BASE" is mentioned in an image, it indicates that the item serves as the foundation of the sculpture, and should be placed exactly at the bottom of the main sculpture (BUT DONT ADD THE 'BASE' TEXT).
-         CRICIAL:-(REMEMBER NOT TO MODIFY THE BASE SCULPTURE EVEN A LITTLE BIT, THE SCULPTURE SHOULD MATCH EXACTLY LIKE IN THE IMAGE, NO EXTRA MODIFICATIONS ALLOWED, JUST PLACE THE BASE AT THE BOTTOM WITHOUT CHANGING THE SCULPTURE ITSELF.)
-
-         REMINDER:DO NOT ADD THE 'TOPPER', 'TOPPER(WITH LOGO)' AND 'BASE' TEXT IN THE SCULPTURE, THAT IS JUST FOR UNDERSTANDING. 
-        
-        """
-            
         if 'template_selected_message' in session:
             image_generation_prompt += f"\n\nNOTE: {session['template_selected_message']}"
             # Clear the message after using it to avoid repetition
