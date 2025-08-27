@@ -58,53 +58,67 @@ def classify_prompt_type(prompt):
 
 
 
-def combine_images(image_paths, output_path):
-    """Combines multiple images into one with a white background.
-    Smaller images are resized to match the max height.
-    Avoids combining duplicate images.
+import hashlib
+from PIL import Image
+import logging
+Image.MAX_IMAGE_PIXELS = 999999999 
+logging.basicConfig(level=logging.DEBUG)
+
+def combine_images(image_paths, output_path, max_size=1024):
     """
-    # First remove duplicates by checking file content
+    Combines multiple images into one with a white background.
+    - Resizes each image to fit within max_size x max_size while keeping aspect ratio.
+    - Avoids duplicate images based on content hash.
+    - Aligns all images by height for a clean horizontal combination.
+    """
+
     unique_images = []
     seen_hashes = set()
-    
+
     for path in image_paths:
         try:
             with Image.open(path) as img:
-                # Create a hash of the image content
-                img_hash = hash(img.tobytes())
+                img = img.convert("RGB")
+
+                # Resize while keeping aspect ratio
+                img.thumbnail((max_size, max_size), Image.LANCZOS)
+
+                # Hash for duplicates
+                img_bytes = img.tobytes()
+                img_hash = hashlib.md5(img_bytes).hexdigest()
+
                 if img_hash not in seen_hashes:
                     seen_hashes.add(img_hash)
-                    unique_images.append(path)
+                    unique_images.append(img)
+
         except Exception as e:
-            logging.warning(f"Could not process image {path}: {str(e)}")
+            logging.error(f"Error processing {path}: {e}")
             continue
-    
+
     if not unique_images:
         raise ValueError("No valid images to combine")
-    
-    images = [Image.open(path) for path in unique_images]
-    widths, heights = zip(*(i.size for i in images))
 
-    max_height = max(heights)
+    # Make all images same height
+    max_height = max(img.height for img in unique_images)
     resized_images = []
-
-    for img in images:
-        width, height = img.size
-        if height < max_height:
-            # Maintain aspect ratio
-            new_width = int((max_height / height) * width)
-            img = img.resize((new_width, max_height), Image.LANCZOS)  # Updated from ANTIALIAS to LANCZOS
+    for img in unique_images:
+        if img.height < max_height:
+            ratio = max_height / img.height
+            new_width = int(img.width * ratio)
+            img = img.resize((new_width, max_height), Image.LANCZOS)
         resized_images.append(img)
 
-    total_width = sum(img.size[0] for img in resized_images)
+    # Combine horizontally
+    total_width = sum(img.width for img in resized_images)
     new_im = Image.new('RGB', (total_width, max_height), color='white')
 
     x_offset = 0
     for img in resized_images:
         new_im.paste(img, (x_offset, 0))
-        x_offset += img.size[0]
+        x_offset += img.width
 
     new_im.save(output_path, format='JPEG')
+    logging.info(f"Combined image saved at {output_path}")
 from rapidfuzz import fuzz
 
 # Function to check similarity
@@ -308,7 +322,7 @@ ICE_CUBE_PROMPTS = {
     "task": "add the logo image into the center of the icecube",
     "instructions": 
         "effect": "Create a carved snow-filled appearance inside the ice sculpture, the image should not be colored and it should be engraved into the icecube with some depth",
-        "ice":"ice should be crystal clear, no bubbles or clouds"
+        "ice":"ice should be crystal clear, transparent, and completely free of any cloudiness, bubbles, or impurities. The ice must appear as pure, pristine, see-through ice with perfect clarity",
         "Strict": "the logo should be engraved into the ice few centimeters with some depth",
         "Extra":"remove any background of the image before adding it to the icecube"
     """,
@@ -318,7 +332,7 @@ ICE_CUBE_PROMPTS = {
         "effect": "it should look like the ice is colored and not etched",
         "Strict": "the image should be engraved into the ice few centimeters with some depth",
         "Extra":"remove any background of the image before adding it to the icecube",
-        "ice":"ice should be crystal clear, no bubbles or clouds"
+        "ice":"ice should be crystal clear, transparent, and completely free of any cloudiness, bubbles, or impurities. The ice must appear as pure, pristine, see-through ice with perfect clarity"
     """,
     "Paper": """
     "task": "add the image inside the icecube, ",
@@ -326,7 +340,7 @@ ICE_CUBE_PROMPTS = {
         "effect": "it should look like a colored printed paper is frozen into the icecube, the Logo should be colored with some white outline and transparent background and should be in center of the cube",
         "Strict": "the image should be placed into the ice few centimeters in some depth",
         "Extra":"remove any background of the image before adding it to the icecube",
-        "ice":"ice should be crystal clear, no bubbles or clouds, increase the size of the cube if the logo doesnot fit"
+        "ice":"ice should be crystal clear, transparent, and completely free of any cloudiness, bubbles, or impurities. The ice must appear as pure, pristine, see-through ice with perfect clarity, increase the size of the cube if the logo doesnot fit"
     """,
     "Snofilled+paper": """
     "task": "add the image into the center of the icecube ",
@@ -334,7 +348,7 @@ ICE_CUBE_PROMPTS = {
         "effect": "it should look like a colored printed paper is frozen into the icecube, the paper should be colored and should be in center of the cube, and the ice should be etched a little bit on the outlines of the image logo",
         "Strict": "the logo should be engraved into the ice few centimeters with some depth",
         "Extra":"remove any background of the image before adding it to the icecube",
-        "ice":"ice should be crystal clear, no bubbles or clouds"
+        "ice":"ice should be crystal clear, transparent, and completely free of any cloudiness, bubbles, or impurities. The ice must appear as pure, pristine, see-through ice with perfect clarity"
     """
 }
 
@@ -453,7 +467,7 @@ def get_logo_instructions(effect_type):
     }
 
     effects = {
-        "Snofilled": "Create a carved snow-filled appearance inside the ice sculpture. The image should not be colored and should be engraved with visible depth inside the ice cube.",
+        "Snofilled": "Create a carved snow appearance inside the ice sculpture. The image should not be colored and should be engraved with visible depth inside the ice cube.",
         "Colored": "It should look like the ice is colored from the logo, not etched. The image appears as colored pigmentation embedded inside the ice.",
         "Paper": "It should look like a colored printed paper is frozen inside the ice cube. The logo should be colored, have a slight white outline, and a transparent background, and should be centered within the cube."
     }
@@ -461,6 +475,67 @@ def get_logo_instructions(effect_type):
     shared["instructions"]["effect"] = effects[effect_type]
     return shared
 
+
+@app.route('/log_button_press', methods=['POST'])
+def log_button_press():
+    data = request.get_json()
+    button = data.get('button')
+    image_url = data.get('image_url')
+    timestamp = data.get('timestamp')
+    
+    print(f"Expand button pressed for image: {image_url} at {timestamp}")
+    
+    # You could also log this to a file or database
+    # with open('button_logs.txt', 'a') as f:
+    #     f.write(f"{timestamp} - {button} button pressed for {image_url}\n")
+    
+    return jsonify({'status': 'success'})
+
+@app.route("/expand_chatbot", methods=["POST"])
+def expand_chatbot():
+    user_input = request.form.get("user_input", "").strip()
+    uploaded_files = request.files.getlist("images")
+
+    print("expand_chatbot route was hit!")
+
+    try:
+        #  Verify there is an image
+        if not uploaded_files:
+            return jsonify({"response": "No image provided for expansion"}), 400
+        
+        # Process just the first image
+        uploaded_file = uploaded_files[0]
+        combined_id = uuid.uuid4().hex[:8]
+        combined_path = os.path.join(app.config["UPLOAD_FOLDER"], f"combined_{combined_id}.jpg")
+        uploaded_file.save(combined_path)
+        
+        # Generate using ONLY the user's prompt
+        print("Generating image using ONLY user input:", user_input)  # Debugging: Print the prompt being used
+        with open(combined_path, "rb") as image_file:
+            result = client.images.edit(
+                model="gpt-image-1",  # Make sure to use the correct model name
+                image=image_file,
+                prompt=user_input,  # Only using the user's original input
+            )
+        
+        # Save and return the result
+        output_id = uuid.uuid4().hex[:8]
+        output_filename = f"sculpture_{output_id}.png"
+        output_path = os.path.join(app.config["UPLOAD_FOLDER"], output_filename)
+
+        image_bytes = base64.b64decode(result.data[0].b64_json)
+        with open(output_path, "wb") as f:
+            f.write(image_bytes)
+
+        print("Image generated successfully. Returning:", {"image_url": f"/static/uploads/{output_filename}"})
+        return jsonify({
+            "image_url": f"/static/uploads/{output_filename}"
+        })
+        
+    except Exception as e:
+        print(f"Error expanding image: {str(e)}")
+        return jsonify({"response": f"Error expanding image: {str(e)}"}), 500
+    
 @app.route("/chatbot", methods=["POST"])
 def chatbot():
     # Initialize conversation history if it doesn't exist
@@ -475,20 +550,69 @@ def chatbot():
     uploaded_files = request.files.getlist("images")
     logging.debug(f"Received request.files: {request.files}")
 
-    # Check for ice cube selection first
+    # Check for ice cube selection first - PROCESS AND RETURN EARLY
     selected_ice_cube = session.get('selected_ice_cube')
-    image_generation_prompt = None
     
-    if selected_ice_cube:
+    if selected_ice_cube and uploaded_files:
         ice_prompt = ICE_CUBE_PROMPTS.get(selected_ice_cube, "")
         image_generation_prompt = f"{ice_prompt}\nUSER INPUT:\n{user_input}"
         print(f"Using {selected_ice_cube} ice cube prompt with user input:\n{image_generation_prompt}")
         session.pop('selected_ice_cube', None)
         
+        # Save uploaded files and process ONLY with ice cube prompt
+        uploaded_paths = []
+        if uploaded_files:
+            uploaded_ids = [uuid.uuid4().hex[:8] for _ in uploaded_files]
+            uploaded_paths = [os.path.join(app.config["UPLOAD_FOLDER"], f"uploaded_{id}.jpg") for id in uploaded_ids]
+            for i, file in enumerate(uploaded_files):
+                file.save(uploaded_paths[i])
+                logging.debug(f"Saved uploaded file: {uploaded_paths[i]}")
+        
+        combined_id = uuid.uuid4().hex[:8]
+        combined_path = os.path.join(app.config["UPLOAD_FOLDER"], f"combined_{combined_id}.jpg")
 
-    else:
-    # Determine which prompt to use based on prefix
-     image_generation_prompt = None
+        if uploaded_paths:
+            try:
+                combine_images(uploaded_paths, combined_path)
+                logging.debug(f"Combined image saved to: {combined_path}")
+            except ValueError as e:
+                return jsonify({"response": str(e)})
+            except Exception as e:
+                return jsonify({"response": f"Error combining images: {str(e)}"})
+        else:
+            return jsonify({"response": "No valid images provided"})
+        
+        # Generate image with ONLY ice cube prompt
+        try:
+            with open(combined_path, "rb") as image_file:
+                result = client.images.edit(
+                    model="gpt-image-1",
+                    image=image_file,
+                    prompt=image_generation_prompt,
+                )
+            
+            output_id = uuid.uuid4().hex[:8]
+            output_filename = f"sculpture_{output_id}.png"
+            print("Ice Cube Image Created")
+            output_path = os.path.join(app.config["UPLOAD_FOLDER"], output_filename)
+
+            image_bytes = base64.b64decode(result.data[0].b64_json)
+            with open(output_path, "wb") as f:
+                f.write(image_bytes)
+
+            session["conversation"].append({"role": "user", "content": user_input})
+            session["conversation"].append({
+                "role": "assistant", 
+                "content": "Here is your ice sculpture:",
+                "image": f"/static/uploads/{output_filename}"
+            })
+            session.modified = True
+
+            return jsonify({
+                "image_url": f"/static/uploads/{output_filename}"
+            })
+        except Exception as e:
+            return jsonify({"response": f"Error generating ice cube image: {str(e)}"})
 
     # Convert to lowercase after checking prefixes
     user_input_lower = user_input.lower()
@@ -511,8 +635,6 @@ def chatbot():
         
     # If user uploaded images or we detected base images
     if uploaded_files or base_images:
-
-        
         # Save any uploaded files
         uploaded_paths = []
         if uploaded_files:
@@ -544,26 +666,24 @@ def chatbot():
 
 
         # Use the appropriate prompt based on prefix
+        user_input_lower = user_input.lower()
        
         image_generation_dict = {
             "user_input": user_input,
-            "adding_logo_if_mentioned_else_skip": {
-                "Snofilled": get_logo_instructions("Snofilled"),
-                "Colored": get_logo_instructions("Colored"),
-                "Paper": get_logo_instructions("Paper")
-            },
             "Sculpture_instructions": {
                 "sculpture_preservation": {
                     "shape": "Maintain EXACT shape, proportions, and details from the reference image",
                     "alterations": "Do NOT alter, add, or remove any elements of the sculpture",
+                    "Extra_ice": "Do NOT ADD EXTRA ICE TO THE SCULPTURE, ONLY THE ORIGINAL IMAGE SHOULD BE USED",
                     "contours": "Preserve all original contours and features precisely",
                     "size": "Sculpture should be large, around 6 to 7 feet tall or wide accordingly",
-                    "color_coding": "Dark and light blue color in the image always means ice"
+                    "color_coding": "blue color in the image always means ice so make it of ice, where the light blue color means there is recess in the ice, and any other color means it is made of paper and not ice"
                 },
                 "material_properties": {
-                    "rendering": "Render as crystal-clear, see-through ice",
+                    "rendering": "Render as crystal-clear, see-through ice with perfect transparency and zero cloudiness, no scratches or imperfections, just clear wet ice",
                     "lighting": "Include realistic light refraction and subtle imperfections",
-                    "surface": "Surface should appear smooth and polished"
+                    "surface": "Surface should appear smooth and polished",
+                    "ice_clarity": "Ice must be completely transparent, free of any bubbles, cloudiness, or impurities. The ice should appear as pure, pristine, see-through ice with perfect clarity"
                 },
                 "background_environment": {
                     "placement": "Place the sculpture on a wooden table",
@@ -577,12 +697,19 @@ def chatbot():
                     "NO elements detached from the sculpture even if requested",
                     "NO small details",
                     "NO foggy ice",
+                    "NO cloudy ice - ice must be crystal clear and transparent",
+                    "NO bubbles or impurities in the ice",
                     "NO extra ice base for the sculpture",
                     "NO changes in the sculpture itself allowed",
                     "DO NOT change the sculpture design",
                     "NO extra ice pieces on the sculpture",
                     "Place the sculpture directly on the table without extra ice base",
-                    "DO NOT add any company logos (e.g., 'ice butcher, purveyors of perfect ice')"
+                    "DO NOT add any company logos (e.g., 'ice butcher, purveyors of perfect ice')",
+                    "DO NOT add any text, labels, or words to the sculpture unless explicitly requested by user",
+                    "DO NOT add any logos, brand names, or company names unless explicitly provided by user",
+                    "DO NOT interpret visual elements as text or add text based on visual patterns",
+                    "DO NOT add placeholder text, sample text, or any written content",
+                    "ONLY add text or logos if the user explicitly uploads them or requests them in their input"
                 ],
                 "image_quality": "Always create an HD high-resolution image captured by a high-resolution camera",
                 "sculpture_image_rules": {
@@ -593,27 +720,72 @@ def chatbot():
                 },
                 "modular_components": {
                     "topper": {
-                        "condition": "If 'TOPPER' is mentioned in the image",
+                        "condition": "ONLY if the user explicitly requests a topper in their text input",
                         "instruction": "Place it on top of the sculpture, do NOT add the text 'TOPPER'",
-                        "restriction": "Do NOT modify the base sculpture in any way"
+                        "restriction": "Do NOT modify the base sculpture in any way. Do NOT add toppers unless explicitly requested by user."
                     },
                     "topper_with_logo": {
-                        "condition": "If 'TOPPER(WITH LOGO)' is mentioned in the image",
+                        "condition": "ONLY if the user explicitly requests a topper with logo in their text input",
                         "instruction": "Place it on top of the sculpture with a centered placeholder logo, but do NOT add a logo unless provided",
-                        "restriction": "Do NOT modify the base sculpture in any way"
+                        "restriction": "Do NOT modify the base sculpture in any way. Do NOT add toppers or logos unless explicitly requested by user."
                     },
                     "base": {
-                        "condition": "If 'BASE' is mentioned in the image",
+                        "condition": "ONLY if the user explicitly requests a base in their text input",
                         "instruction": "Place it directly at the bottom of the sculpture, do NOT add the text 'BASE'",
-                        "restriction": "Do NOT modify the base sculpture in any way"
+                        "restriction": "Do NOT modify the base sculpture in any way. Do NOT add bases unless explicitly requested by user."
                     }
                 },
                 "reminders": [
                     "DO NOT add any text labels such as 'TOPPER', 'BASE', or 'TOPPER(WITH LOGO)' in the image",
-                    "THE SCULPTURE MUST MATCH EXACTLY WITH THE ORIGINAL IMAGE WITHOUT ANY MODIFICATIONS"
+                    "THE SCULPTURE MUST MATCH EXACTLY WITH THE ORIGINAL IMAGE WITHOUT ANY MODIFICATIONS",
+                    "DO NOT add any text, words, or written content to the sculpture",
+                    "DO NOT add any logos, brand names, or company names unless explicitly provided by user",
+                    "DO NOT interpret any visual elements as text or add text based on what you think you see",
+                    "ONLY add text or logos if the user explicitly uploads them or mentions them in their request"
                 ]
             }          
 }
+
+        # Conditionally add logo instructions ONLY if user mentions specific terms
+        if any(term in user_input_lower for term in ['snofilled', 'paper', 'colored']):
+            logo_instructions = {
+                "Snofilled": {
+                    "effect": "Create a carved snow appearance inside the ice sculpture. The image should not be colored and should be engraved with visible depth inside the ice cube.",
+                    "strict": "The logo must be embedded a few centimeters into the ice",
+                    "processing": "Remove any background of the image before embedding it into the ice cube"
+                },
+                "Colored": {
+                    "effect": "It should look like the ice is colored from the logo, not etched. The image appears as colored pigmentation embedded inside the ice.",
+                    "strict": "The logo must be embedded a few centimeters into the ice",
+                    "processing": "Remove any background of the image before embedding it into the ice cube"
+                },
+                "Paper": {
+                    "effect": "It should look like a colored printed paper is frozen inside the ice cube. The logo should be colored, have a slight white outline, and a transparent background, and should be centered within the cube.",
+                    "strict": "The logo must be embedded a few centimeters into the ice",
+                    "processing": "Remove any background of the image before embedding it into the ice cube"
+                }
+            }
+            
+            # Determine which specific effect to use based on user input
+            effect_type = None
+            if 'snofilled' in user_input_lower:
+                effect_type = "Snofilled"
+            elif 'paper' in user_input_lower:
+                effect_type = "Paper"
+            elif 'colored' in user_input_lower:
+                effect_type = "Colored"
+            
+            if effect_type:
+                image_generation_dict["logo_instructions"] = {
+                    "task": "add the image into the sculpture",
+                    "effect_type": effect_type,
+                    "instructions": logo_instructions[effect_type],
+                    "clarification": "If a blue image is provided, it is always ice and should be used as the ice sculpture, not as a logo. Blue images are never logos or image overlays—they are the ice.",
+                    "ice_structure": "The ice sculpture must precisely match the input image, with 100% accuracy. Do not add, remove, or modify any elements."
+                }
+
+        # Convert to string for the prompt
+        image_generation_prompt = json.dumps(image_generation_dict, indent=2)
           
         if not image_generation_prompt:
             image_generation_prompt = json.dumps(image_generation_dict, indent=4)
@@ -697,7 +869,7 @@ def chatbot():
         "task": "Generate realistic images of ice engravings based solely on user text input.",
         "instructions": 
             "design": "Accurately follow the user's text description with no creative additions or modifications.",
-            "ice_quality": "Use natural, crystal-clear ice with realistic light refraction. No bubbles, rough edges, or imperfections.",
+            "ice_quality": "Use natural, crystal-clear ice with perfect transparency and zero cloudiness. No bubbles, rough edges, or imperfections. The ice must appear as pure, pristine, see-through ice with perfect clarity.",
             "surface": "Ice must appear smooth, clean, and polished.",
             "detail_level": "Keep details minimal; emphasize the natural beauty of ice.",
             "creativity": "This is a technical execution. No creative interpretation.",
