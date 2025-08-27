@@ -118,74 +118,74 @@ function updateInputFiles() {
 }
 let selectedFiles = [];
 
-function previewImage() {
-    const imageUpload = document.getElementById("image-upload");
-    const previewContainer = document.getElementById("image-preview-container");
-    const inputWrapper = document.querySelector(".input-wrapper");
+// function previewImage() {
+//     const imageUpload = document.getElementById("image-upload");
+//     const previewContainer = document.getElementById("image-preview-container");
+//     const inputWrapper = document.querySelector(".input-wrapper");
 
-    // Add newly selected files to our global array, avoiding duplicates
-    if (imageUpload.files && imageUpload.files.length > 0) {
-        Array.from(imageUpload.files).forEach(file => {
-            const fileExists = selectedFiles.some(
-                existingFile => existingFile.name === file.name &&
-                    existingFile.size === file.size &&
-                    existingFile.lastModified === file.lastModified
-            );
+//     // Add newly selected files to our global array, avoiding duplicates
+//     if (imageUpload.files && imageUpload.files.length > 0) {
+//         Array.from(imageUpload.files).forEach(file => {
+//             const fileExists = selectedFiles.some(
+//                 existingFile => existingFile.name === file.name &&
+//                     existingFile.size === file.size &&
+//                     existingFile.lastModified === file.lastModified
+//             );
 
-            if (!fileExists) {
-                selectedFiles.push(file);
-            }
-        });
-    }
+//             if (!fileExists) {
+//                 selectedFiles.push(file);
+//             }
+//         });
+//     }
 
-    // Clear and rebuild preview with all selected files
-    previewContainer.innerHTML = "";
+//     // Clear and rebuild preview with all selected files
+//     previewContainer.innerHTML = "";
 
-    if (selectedFiles.length > 0) {
-        // Increase wrapper height when images are present
-        inputWrapper.style.minHeight = "90px";
+//     if (selectedFiles.length > 0) {
+//         // Increase wrapper height when images are present
+//         inputWrapper.style.minHeight = "90px";
         
-        selectedFiles.forEach((file, index) => {
-            const previewWrapper = document.createElement("div");
-            previewWrapper.className = "preview-wrapper";
-            previewWrapper.style.position = "relative";
+//         selectedFiles.forEach((file, index) => {
+//             const previewWrapper = document.createElement("div");
+//             previewWrapper.className = "preview-wrapper";
+//             previewWrapper.style.position = "relative";
             
-            const imgPreview = document.createElement("img");
-            imgPreview.classList.add("preview-image");
+//             const imgPreview = document.createElement("img");
+//             imgPreview.classList.add("preview-image");
 
-            const removeBtn = document.createElement("span");
-            removeBtn.innerHTML = "&times;";
-            removeBtn.className = "preview-remove";
-            removeBtn.onclick = (e) => {
-                e.stopPropagation();
-                removeImage(index);
-            };
+//             const removeBtn = document.createElement("span");
+//             removeBtn.innerHTML = "&times;";
+//             removeBtn.className = "preview-remove";
+//             removeBtn.onclick = (e) => {
+//                 e.stopPropagation();
+//                 removeImage(index);
+//             };
 
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                imgPreview.src = e.target.result;
-                imgPreview.title = file.name;
+//             const reader = new FileReader();
+//             reader.onload = function(e) {
+//                 imgPreview.src = e.target.result;
+//                 imgPreview.title = file.name;
                 
-                // Show larger preview on click
-                imgPreview.onclick = (e) => {
-                    e.stopPropagation();
-                    showFullImagePreview(e.target.src);
-                };
-            };
-            reader.readAsDataURL(file);
+//                 // Show larger preview on click
+//                 imgPreview.onclick = (e) => {
+//                     e.stopPropagation();
+//                     showFullImagePreview(e.target.src);
+//                 };
+//             };
+//             reader.readAsDataURL(file);
 
-            previewWrapper.appendChild(imgPreview);
-            previewWrapper.appendChild(removeBtn);
-            previewContainer.appendChild(previewWrapper);
-        });
-    } else {
-        // Reset wrapper height when no images
-        inputWrapper.style.minHeight = "50px";
-    }
+//             previewWrapper.appendChild(imgPreview);
+//             previewWrapper.appendChild(removeBtn);
+//             previewContainer.appendChild(previewWrapper);
+//         });
+//     } else {
+//         // Reset wrapper height when no images
+//         inputWrapper.style.minHeight = "50px";
+//     }
 
-    updateInputFiles();
-    checkInput();
-}
+//     updateInputFiles();
+//     checkInput();
+// }
 
 // Helper function to show full image preview
 function showFullImagePreview(src) {
@@ -565,372 +565,430 @@ async function selectTemplate(templateType) {
             });
     }
 }
-
-async function sendMessage() {
-    console.log("sendMessage called");
-    console.log("Current ice cube selection:", currentIceCubeSelection);
-    console.log("Selected files count:", selectedFiles.length);
-    console.log("Selected files:", selectedFiles);
-
-    const quickPrompts = document.querySelector('.quick-prompts');
-    if (quickPrompts) quickPrompts.style.display = 'none';
-
-    const heading = document.getElementById('chat-welcome-heading');
-    if (heading && !heading.classList.contains('hidden')) {
-        heading.classList.add('hidden');
-    }
-
-    // 1. CAPTURE the input values *before* clearing
-    const userInput = document.getElementById('user-input').value;
-    const capturedFiles = [...selectedFiles]; // Create a copy!
-
-    // 2. Immediately CLEAR the input elements and preview
-    document.getElementById('image-preview-container').innerHTML = '';
-    selectedFiles.length = 0;  // Clear the *original* selectedFiles array
-    document.getElementById("user-input").value = "";
-
+function updateChatWithNewImage(newImageUrl) {
+    // Get the last bot message
     const chatMessages = document.getElementById('chat-messages');
-
-    // Check for empty input
-    if (userInput.trim() === '' && capturedFiles.length === 0) return;
-
-    // Display user message (including uploaded images if any)
-    const userMessageDiv = document.createElement("div");
-    userMessageDiv.classList.add("message", "user-message");
-    userMessageDiv.style.display = "flex";
-    userMessageDiv.style.alignItems = "flex-start";
-    userMessageDiv.style.gap = "15px";
-    userMessageDiv.style.marginBottom = "15px";
-
-    const userMessageContent = document.createElement("div");
-    userMessageContent.style.display = "flex";
-    userMessageContent.style.flexDirection = "column";
-    userMessageContent.style.gap = "10px";
-    userMessageContent.style.maxWidth = "80%";
-
-    // Add text if present
-    if (userInput.trim() !== '') {
-        const userMessageText = document.createElement("div");
-        userMessageText.classList.add("message-text");
-        userMessageText.textContent = userInput;
-        userMessageText.style.padding = "12px 15px";
-        userMessageText.style.background = "#FFF";
-        userMessageText.style.color = "black";
-        userMessageText.style.borderRadius = "18px";
-        userMessageContent.appendChild(userMessageText);
-    }
-
-    // Add images if present
-    if (capturedFiles.length > 0) {
-        const userImagesContainer = document.createElement("div");
-        userImagesContainer.style.display = "flex";
-        userImagesContainer.style.flexWrap = "wrap";
-        userImagesContainer.style.gap = "10px";
-
-        for (const file of capturedFiles) {
-            const imageWrapper = document.createElement("div");
-            imageWrapper.style.position = "relative";
-
-            const img = document.createElement("img");
-            img.classList.add("chat-image");
-            img.style.width = "100px";
-            img.style.height = "100px";
-            img.style.objectFit = "cover";
-            img.style.borderRadius = "8px";
-            img.style.border = "1px solid #ddd";
-
-            const reader = new FileReader();
-            reader.onload = (e) => img.src = e.target.result;
-            reader.readAsDataURL(file);
-
-            imageWrapper.appendChild(img);
-            userImagesContainer.appendChild(imageWrapper);
-        }
-
-        userMessageContent.appendChild(userImagesContainer);
-    }
-
-    userMessageDiv.appendChild(userMessageContent);
-    chatMessages.appendChild(userMessageDiv);
-
-
-
-    // Show typing indicator
-    const typingElement = showTypingIndicator();
-
-    // Prepare form data
-    const formData = new FormData();
-    formData.append("user_input", userInput);
-
-    // Prepare the form images
-    if (capturedFiles.length > 0) {
-        for (let i = 0; i < capturedFiles.length; i++) {
-            formData.append("images", capturedFiles[i]);
-        }
-    }
-
-    // Add template information if an ice cube was selected
-    if (currentIceCubeSelection) {
-        formData.append("template_type", currentIceCubeSelection);
-    }
-
-    try {
-        const response = await fetch("/chatbot", {
-            method: "POST",
-            body: formData
-        });
-
-        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-
-        const data = await response.json();
-        removeTypingIndicator(typingElement);
-
-        // Create bot response container
-        const botMessageDiv = document.createElement("div");
-        botMessageDiv.classList.add("message", "bot-message");
-        botMessageDiv.style.display = "flex";
-        botMessageDiv.style.alignItems = "flex-start";
-        botMessageDiv.style.gap = "15px";
-        botMessageDiv.style.marginBottom = "15px";
-
-        const botMessageText = document.createElement("div");
-        botMessageText.classList.add("message-text");
-        botMessageText.style.padding = "12px 15px";
-        botMessageText.style.background = "#ECECEC";
-        botMessageText.style.borderRadius = "18px";
-        botMessageText.style.maxWidth = "80%";
-
-
-        // Display generated image and input image (if applicable)
-        if (data.image_url) {
-            const combinedContainer = document.createElement("div");
-            combinedContainer.style.display = "flex";
-            combinedContainer.style.gap = "15px";
-
-
-            // Display generated image
-            const outputContainer = document.createElement("div");
-            outputContainer.style.display = "flex";
-            outputContainer.style.flexDirection = "column";
-            outputContainer.style.alignItems = "center"; // Center the image and actions
-
-
-            const outputTitle = document.createElement("div");
-            outputTitle.textContent = currentIceCubeSelection
-                ? "Generated Ice Cube Result:"
-                : "Generated Result:";
-            outputTitle.style.fontWeight = "bold";
-            outputTitle.style.marginBottom = "5px";
-            outputContainer.appendChild(outputTitle);
-
-            const generatedImg = document.createElement("img");
-            generatedImg.src = data.image_url;
-            generatedImg.classList.add("chat-image");
-            generatedImg.style.Width = "500px";
-            generatedImg.style.Height = "auto";
-            generatedImg.style.borderRadius = "10px";
-            generatedImg.style.cursor = "pointer";
-
-
-            // Add action buttons
-            const actionsContainer = document.createElement("div");
-            actionsContainer.style.display = "flex";
-            actionsContainer.style.gap = "10px";
-            actionsContainer.style.marginTop = "10px";
-
-            // Download button
-            const downloadBtn = createActionButton("Download", "static/icons/download.png", () => {
-                const link = document.createElement("a");
-                link.href = data.image_url;
-                link.download = `generated_${Date.now()}.png`;
-                link.click();
-            });
-
-            // Select button
-            const selectBtn = createActionButton("Select", "static/icons/select.png", () => {
-                fetch(data.image_url)
-                    .then(res => res.blob())
-                    .then(blob => {
-                        selectedFiles = [new File([blob], `generated_${Date.now()}.png`, { type: "image/png" })];
-                        updateInputFiles();
-                        previewImage();
-                    });
-            });
-
-            // Expand button
-            const expandBtn = createActionButton("Expand", "static/icons/editing.png", () => {
-                openModal(data.image_url);
-            });
-
-
-
-            // **Conditional "Extract Logo" Button**
-            let extractLogoBtn = null; // Initialize to null
-
-            if (currentIceCubeSelection && data.image_url) { // Check if ice cube was selected and image_url exists
-                extractLogoBtn = createActionButton("Extract Logo", "static/icons/crop.png", () => {
-                    // Check if data.image_url exists again inside the callback (for safety)
-                    if (!data.image_url) {
-                        addChatMessage("No generated image available for logo extraction.", "bot");
-                        return;
-                    }
-
-                    // Function to convert URL to File object
-                    const urlToFile = async (url, filename, mimeType) => {
-                        try {
-                            const res = await fetch(url);
-                            const buf = await res.arrayBuffer();
-                            const contentType = res.headers.get('content-type') || mimeType; // Use response headers
-                            return new File([buf], filename, { type: contentType });
-                        } catch (err) {
-                            console.error("Error fetching or converting URL to file:", err);
-                            throw err; // Re-throw to be caught in the main try/catch block
-                        }
-
-                    }
-
-                    // Use async/await to handle the conversion and proceed only after the file is created
-                    (async () => {
-                        try {
-                            // Use `png` as default in case type detection fails
-                            const mimeType = 'image/png';
-                            const filename = `generated_ice_cube_${Date.now()}.${mimeType.split('/')[1] || 'png'}`;
-
-                            const file = await urlToFile(data.image_url, filename, mimeType);
-
-                            const formData = new FormData();
-                            formData.append("file", file); // Append the *converted* file
-
-                            console.log("Sending generated image for logo extraction:", file);
-                            const logoTypingElement = showTypingIndicator(); // <-- show spinner
-
-
-                            fetch('/extract_logo', {
-                                method: 'POST',
-                                body: formData
-                            })
-                                .then(response => {
-                                    if (!response.ok) {
-                                        console.error("Error response from /extract_logo:", response);
-                                        throw new Error(`HTTP error! status: ${response.status}`);
-                                    }
-                                    return response.blob();
-                                })
-                                .then(blob => {
-                                    const logoUrl = URL.createObjectURL(blob);
-
-                                    // Create a new message with the extracted logo
-                                    const logoMessageDiv = document.createElement("div");
-                                    logoMessageDiv.classList.add("message", "bot-message");
-                                    logoMessageDiv.style.display = "flex";
-                                    logoMessageDiv.style.alignItems = "flex-start";
-                                    logoMessageDiv.style.gap = "15px";
-                                    logoMessageDiv.style.marginBottom = "15px";
-
-                                    const logoMessageContent = document.createElement("div");
-                                    logoMessageContent.classList.add("message-text");
-                                    logoMessageContent.style.padding = "12px 15px";
-                                    logoMessageContent.style.background = "#ECECEC";
-                                    logoMessageContent.style.borderRadius = "18px";
-                                    logoMessageContent.style.maxWidth = "80%";
-
-                                    const logoTitle = document.createElement("div");
-                                    logoTitle.textContent = "Extracted Logo:";
-                                    logoTitle.style.fontWeight = "bold";
-                                    logoTitle.style.marginBottom = "10px";
-                                    logoMessageContent.appendChild(logoTitle);
-
-                                    const extractedLogoImg = document.createElement("img");
-                                    extractedLogoImg.src = logoUrl;
-                                    extractedLogoImg.classList.add("chat-image");
-                                    extractedLogoImg.style.width = "500px";
-                                    extractedLogoImg.style.height = "auto";
-                                    extractedLogoImg.style.borderRadius = "8px";
-                                    extractedLogoImg.style.border = "1px solid #ddd";
-                                    logoMessageContent.appendChild(extractedLogoImg);
-
-                                    const downloadLogoBtn = createActionButton("Download Logo", "static/icons/download.png", () => {
-                                        const link = document.createElement("a");
-                                        link.href = logoUrl;
-                                        link.download = `extracted_logo_${Date.now()}.png`;
-                                        link.click();
-                                    });
-                                    logoMessageContent.appendChild(downloadLogoBtn);
-                                    
-                                    
-
-                                    logoMessageDiv.appendChild(logoMessageContent);
-                                    chatMessages.appendChild(logoMessageDiv);
-
-                                    removeTypingIndicator(logoTypingElement);
-
-                                    // Scroll to bottom
-                                    chatMessages.scrollTop = chatMessages.scrollHeight;
-                                })
-                                .catch(error => {
-                                    
-                                    console.error("Error triggering logo extraction:", error);
-                                    addChatMessage("Error extracting logo. Please try again.", "bot");
-                                });
-
-                        } catch (err) {
-                            console.error("Error creating file from generated URL:", err);
-                            addChatMessage("Error processing image. Please try again.", "bot");
-                        }
-                    })();
-                });
-
-                // Append the button only if `currentIceCubeSelection` is true
-                actionsContainer.appendChild(extractLogoBtn);
-            }
-
-
-
-            actionsContainer.appendChild(downloadBtn);
-            actionsContainer.appendChild(selectBtn);
-            actionsContainer.appendChild(expandBtn);
-
-
-
-
-            outputContainer.appendChild(generatedImg);
-            outputContainer.appendChild(actionsContainer);
-
-
-            // Conditionally show the button if applicable
-            const inputContainer = document.createElement("div");
-            inputContainer.style.display = "flex";
-            inputContainer.style.flexDirection = "column";
-            inputContainer.style.alignItems = "center";
-
-
-
-            combinedContainer.appendChild(outputContainer);
-            if (inputContainer.children.length > 0) {
-                combinedContainer.appendChild(inputContainer);
-            }
-            botMessageText.appendChild(combinedContainer);
-        }
-        else {
-            botMessageText.innerHTML = data.response || "Sorry, I couldn't understand your request.";
-
-        }
-
-
-
-        botMessageDiv.appendChild(botMessageText);
-        chatMessages.appendChild(botMessageDiv);
-
-        // Scroll to bottom
-        chatMessages.scrollTop = chatMessages.scrollHeight;
-
-    } catch (error) {
-        removeTypingIndicator(typingElement);
-        console.error("Error:", error);
-        addChatMessage("Sorry, there was an error processing your request.", "bot");
-    } finally {
+    const lastBotMessage = chatMessages.lastElementChild;
+
+    // Find the image element within the message
+    const imageElement = lastBotMessage.querySelector('img.chat-image');
+
+    // If found, replace the image source
+    if (imageElement) {
+        imageElement.src = newImageUrl;
+    } else {
+        console.warn("No image found in the last bot message.");
     }
 }
+
+    // Define sendBtn in the global scope
+    const sendBtn = document.getElementById('send-btn');
+
+    // Add isExpandMode property to the sendBtn
+    sendBtn.isExpandMode = false;
+
+    async function sendMessage() {
+        console.log("sendMessage called");
+        console.log("Current ice cube selection:", currentIceCubeSelection);
+        console.log("Selected files count:", selectedFiles.length);
+        console.log("Selected files:", selectedFiles);
+
+        const quickPrompts = document.querySelector('.quick-prompts');
+        if (quickPrompts) quickPrompts.style.display = 'none';
+
+        const heading = document.getElementById('chat-welcome-heading');
+        if (heading && !heading.classList.contains('hidden')) {
+            heading.classList.add('hidden');
+        }
+
+        // 1. CAPTURE the input values *before* clearing
+        const userInput = document.getElementById('user-input').value;
+        const capturedFiles = [...selectedFiles]; // Create a copy!
+
+        // 2. Immediately CLEAR the input elements and preview
+        document.getElementById('image-preview-container').innerHTML = '';
+        selectedFiles.length = 0;  // Clear the *original* selectedFiles array
+        document.getElementById("user-input").value = "";
+
+        const chatMessages = document.getElementById('chat-messages');
+
+        // Check for empty input
+        if (userInput.trim() === '' && capturedFiles.length === 0) return;
+
+        // Display user message (including uploaded images if any)
+        const userMessageDiv = document.createElement("div");
+        userMessageDiv.classList.add("message", "user-message");
+        userMessageDiv.style.display = "flex";
+        userMessageDiv.style.alignItems = "flex-start";
+        userMessageDiv.style.gap = "15px";
+        userMessageDiv.style.marginBottom = "15px";
+
+        const userMessageContent = document.createElement("div");
+        userMessageContent.style.display = "flex";
+        userMessageContent.style.flexDirection = "column";
+        userMessageContent.style.gap = "10px";
+        userMessageContent.style.maxWidth = "80%";
+
+        // Add text if present
+        if (userInput.trim() !== '') {
+            const userMessageText = document.createElement("div");
+            userMessageText.classList.add("message-text");
+            userMessageText.textContent = userInput;
+            userMessageText.style.padding = "12px 15px";
+            userMessageText.style.background = "#FFF";
+            userMessageText.style.color = "black";
+            userMessageText.style.borderRadius = "18px";
+            userMessageContent.appendChild(userMessageText);
+        }
+
+        // Add images if present
+        if (capturedFiles.length > 0) {
+            const userImagesContainer = document.createElement("div");
+            userImagesContainer.style.display = "flex";
+            userImagesContainer.style.flexWrap = "wrap";
+            userImagesContainer.style.gap = "10px";
+
+            for (const file of capturedFiles) {
+                const imageWrapper = document.createElement("div");
+                imageWrapper.style.position = "relative";
+
+                const img = document.createElement("img");
+                img.classList.add("chat-image");
+                img.style.width = "100px";
+                img.style.height = "100px";
+                img.style.objectFit = "cover";
+                img.style.borderRadius = "8px";
+                img.style.border = "1px solid #ddd";
+
+                const reader = new FileReader();
+                reader.onload = (e) => img.src = e.target.result;
+                reader.readAsDataURL(file);
+
+                imageWrapper.appendChild(img);
+                userImagesContainer.appendChild(imageWrapper);
+            }
+
+            userMessageContent.appendChild(userImagesContainer);
+        }
+
+        userMessageDiv.appendChild(userMessageContent);
+        chatMessages.appendChild(userMessageDiv);
+
+
+
+        // Show typing indicator
+        const typingElement = showTypingIndicator();
+
+        // Prepare form data
+        const formData = new FormData();
+        formData.append("user_input", userInput);
+
+        // Prepare the form images
+        if (capturedFiles.length > 0) {
+            for (let i = 0; i < capturedFiles.length; i++) {
+                formData.append("images", capturedFiles[i]);
+            }
+        }
+
+        // Add template information if an ice cube was selected
+        if (currentIceCubeSelection) {
+            formData.append("template_type", currentIceCubeSelection);
+        }
+
+        const apiUrl = sendBtn.isExpandMode ? '/expand_chatbot' : '/chatbot';
+        console.log("Sending to API:", apiUrl, "- isExpandMode:", sendBtn.isExpandMode, "- user_input:", userInput);
+
+        if (sendBtn.isExpandMode) {
+            sendBtn.style.backgroundColor = "orange";
+            sendBtn.style.color = "black";
+        } else {
+            sendBtn.style.backgroundColor = "#FC8344"; // Revert to original color
+            sendBtn.style.color = "white";
+        }
+
+
+        try {
+            const response = await fetch(apiUrl, {
+                method: "POST",
+                body: formData  // Use the formData created above
+            });
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+
+            const data = await response.json();
+
+            removeTypingIndicator(typingElement);
+
+            // Create bot response container
+            const botMessageDiv = document.createElement("div");
+            botMessageDiv.classList.add("message", "bot-message");
+            botMessageDiv.style.display = "flex";
+            botMessageDiv.style.alignItems = "flex-start";
+            botMessageDiv.style.gap = "15px";
+            botMessageDiv.style.marginBottom = "15px";
+
+            const botMessageText = document.createElement("div");
+            botMessageText.classList.add("message-text");
+            botMessageText.style.padding = "12px 15px";
+            botMessageText.style.background = "#ECECEC";
+            botMessageText.style.borderRadius = "18px";
+            botMessageText.style.maxWidth = "80%";
+
+
+            // Display generated image and input image (if applicable)
+            if (data.image_url) {
+                const combinedContainer = document.createElement("div");
+                combinedContainer.style.display = "flex";
+                combinedContainer.style.gap = "15px";
+
+
+                // Display generated image
+                const outputContainer = document.createElement("div");
+                outputContainer.style.display = "flex";
+                outputContainer.style.flexDirection = "column";
+                outputContainer.style.alignItems = "center"; // Center the image and actions
+
+
+                const outputTitle = document.createElement("div");
+                outputTitle.textContent = currentIceCubeSelection
+                    ? "Generated Ice Cube Result:"
+                    : "Generated Result:";
+                outputTitle.style.fontWeight = "bold";
+                outputTitle.style.marginBottom = "5px";
+                outputContainer.appendChild(outputTitle);
+
+                const generatedImg = document.createElement("img");
+                generatedImg.src = data.image_url;
+                generatedImg.classList.add("chat-image");
+                generatedImg.style.Width = "500px";
+                generatedImg.style.Height = "auto";
+                generatedImg.style.borderRadius = "10px";
+                generatedImg.style.cursor = "pointer";
+
+
+                // Add action buttons
+                const actionsContainer = document.createElement("div");
+                actionsContainer.style.display = "flex";
+                actionsContainer.style.gap = "10px";
+                actionsContainer.style.marginTop = "10px";
+
+                // Download button
+                const downloadBtn = createActionButton("Download", "static/icons/download.png", () => {
+                    const link = document.createElement("a");
+                    link.href = data.image_url;
+                    link.download = `generated_${Date.now()}.png`;
+                    link.click();
+                });
+
+                // Select button
+                const selectBtn = createActionButton("Select", "static/icons/select.png", () => {
+                    fetch(data.image_url)
+                        .then(res => res.blob())
+                        .then(blob => {
+                            selectedFiles = [new File([blob], `generated_${Date.now()}.png`, { type: "image/png" })];
+                            updateInputFiles();
+                            previewImage();
+                        });
+                });
+
+                const expandBtn = createActionButton("Expand", "static/icons/editing.png", () => {
+                    // First open the modal
+                    openModal(data.image_url);
+
+                    // Change the background color of send button on clicking expand
+                    handleExpandButtonClick()
+                    // When user confirms edits and sends:
+                    // Fetch the image and add it to formData
+                });
+
+
+                // **Conditional "Extract Logo" Button**
+                let extractLogoBtn = null; // Initialize to null
+
+                if (currentIceCubeSelection && data.image_url) { // Check if ice cube was selected and image_url exists
+                    extractLogoBtn = createActionButton("Extract Logo", "static/icons/crop.png", () => {
+                        // Check if data.image_url exists again inside the callback (for safety)
+                        if (!data.image_url) {
+                            addChatMessage("No generated image available for logo extraction.", "bot");
+                            return;
+                        }
+
+                        // Function to convert URL to File object
+                        const urlToFile = async (url, filename, mimeType) => {
+                            try {
+                                const res = await fetch(url);
+                                const buf = await res.arrayBuffer();
+                                const contentType = res.headers.get('content-type') || mimeType; // Use response headers
+                                return new File([buf], filename, { type: contentType });
+                            } catch (err) {
+                                console.error("Error fetching or converting URL to file:", err);
+                                throw err; // Re-throw to be caught in the main try/catch block
+                            }
+
+                        }
+
+                        // Use async/await to handle the conversion and proceed only after the file is created
+                        (async () => {
+                            try {
+                                // Use `png` as default in case type detection fails
+                                const mimeType = 'image/png';
+                                const filename = `generated_ice_cube_${Date.now()}.${mimeType.split('/')[1] || 'png'}`;
+
+                                const file = await urlToFile(data.image_url, filename, mimeType);
+
+                                const formData = new FormData();
+                                formData.append("file", file); // Append the *converted* file
+
+                                console.log("Sending generated image for logo extraction:", file);
+                                const logoTypingElement = showTypingIndicator(); // <-- show spinner
+
+
+                                fetch('/extract_logo', {
+                                    method: 'POST',
+                                    body: formData
+                                })
+                                    .then(response => {
+                                        if (!response.ok) {
+                                            console.error("Error response from /extract_logo:", response);
+                                            throw new Error(`HTTP error! status: ${response.status}`);
+                                        }
+                                        return response.blob();
+                                    })
+                                    .then(blob => {
+                                        const logoUrl = URL.createObjectURL(blob);
+
+                                        // Create a new message with the extracted logo
+                                        const logoMessageDiv = document.createElement("div");
+                                        logoMessageDiv.classList.add("message", "bot-message");
+                                        logoMessageDiv.style.display = "flex";
+                                        logoMessageDiv.style.alignItems = "flex-start";
+                                        logoMessageDiv.style.gap = "15px";
+                                        logoMessageDiv.style.marginBottom = "15px";
+
+                                        const logoMessageContent = document.createElement("div");
+                                        logoMessageContent.classList.add("message-text");
+                                        logoMessageContent.style.padding = "12px 15px";
+                                        logoMessageContent.style.background = "#ECECEC";
+                                        logoMessageContent.style.borderRadius = "18px";
+                                        logoMessageContent.style.maxWidth = "80%";
+
+                                        const logoTitle = document.createElement("div");
+                                        logoTitle.textContent = "Extracted Logo:";
+                                        logoTitle.style.fontWeight = "bold";
+                                        logoTitle.style.marginBottom = "10px";
+                                        logoMessageContent.appendChild(logoTitle);
+
+                                        const extractedLogoImg = document.createElement("img");
+                                        extractedLogoImg.src = logoUrl;
+                                        extractedLogoImg.classList.add("chat-image");
+                                        extractedLogoImg.style.width = "500px";
+                                        extractedLogoImg.style.height = "auto";
+                                        extractedLogoImg.style.borderRadius = "8px";
+                                        extractedLogoImg.style.border = "1px solid #ddd";
+                                        logoMessageContent.appendChild(extractedLogoImg);
+
+                                        const downloadLogoBtn = createActionButton("Download Logo", "static/icons/download.png", () => {
+                                            const link = document.createElement("a");
+                                            link.href = logoUrl;
+                                            link.download = `extracted_logo_${Date.now()}.png`;
+                                            link.click();
+                                        });
+                                        logoMessageContent.appendChild(downloadLogoBtn);
+
+
+
+                                        logoMessageDiv.appendChild(logoMessageContent);
+                                        chatMessages.appendChild(logoMessageDiv);
+
+                                        removeTypingIndicator(logoTypingElement);
+
+                                        // Scroll to bottom
+                                        chatMessages.scrollTop = chatMessages.scrollHeight;
+                                    })
+                                    .catch(error => {
+
+                                        console.error("Error triggering logo extraction:", error);
+                                        addChatMessage("Error extracting logo. Please try again.", "bot");
+                                    });
+
+                            } catch (err) {
+                                console.error("Error creating file from generated URL:", err);
+                                addChatMessage("Error processing image. Please try again.", "bot");
+                            }
+                        })();
+                    });
+
+                    // Append the button only if `currentIceCubeSelection` is true
+                    actionsContainer.appendChild(extractLogoBtn);
+                }
+
+
+
+                actionsContainer.appendChild(downloadBtn);
+                actionsContainer.appendChild(selectBtn);
+                actionsContainer.appendChild(expandBtn);
+
+
+
+
+                outputContainer.appendChild(generatedImg);
+                outputContainer.appendChild(actionsContainer);
+
+
+                // Conditionally show the button if applicable
+                const inputContainer = document.createElement("div");
+                inputContainer.style.display = "flex";
+                inputContainer.style.flexDirection = "column";
+                inputContainer.style.alignItems = "center";
+
+
+
+                combinedContainer.appendChild(outputContainer);
+                if (inputContainer.children.length > 0) {
+                    combinedContainer.appendChild(inputContainer);
+                }
+                botMessageText.appendChild(combinedContainer);
+            }
+            else {
+                botMessageText.innerHTML = data.response || "Sorry, I couldn't understand your request.";
+
+            }
+
+
+
+            botMessageDiv.appendChild(botMessageText);
+            chatMessages.appendChild(botMessageDiv);
+
+            // Scroll to bottom
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+            // Add the code here to set isExpandMode to false
+
+
+
+        } catch (error) {
+            removeTypingIndicator(typingElement);
+            console.error("Error:", error);
+            addChatMessage("Sorry, there was an error processing your request.", "bot");
+        } finally {
+      if (sendBtn.isExpandMode) {
+                sendBtn.isExpandMode = false;
+                sendBtn.style.backgroundColor = "#FC8344"; // Revert to original color
+                sendBtn.style.color = "white";
+            }
+        }
+
+    }
+
+    // Add this code to set isExpandMode to false
+    function handleExpandButtonClick() {
+        // Change the background color to red
+        sendBtn.style.backgroundColor = 'orange';
+        sendBtn.style.color = "black"
+    
+        // Set a flag to indicate expand mode
+        sendBtn.isExpandMode = true;
+        console.log("Expand button clicked, sendBtn.isExpandMode:", sendBtn.isExpandMode);
+    }
+  
 // Helper function to create action buttons (unchanged)
 function createActionButton(title, iconSrc, onClick) {
     const button = document.createElement("div");
@@ -1523,9 +1581,3 @@ function submitFeedback() {
 // Event listeners for inline feedback
 document.getElementById('submitFeedbackBtn').addEventListener('click', submitFeedback);
 document.querySelector('.close-feedback').addEventListener('click', closeInlineFeedback);
-
-
-
-
-
-
