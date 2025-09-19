@@ -6,3 +6,5 @@ flask-cors
 Pillow
 requests
 google-genai
+psutil
+gunicorn
