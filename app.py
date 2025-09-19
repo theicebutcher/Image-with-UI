@@ -19,6 +19,77 @@ from werkzeug.utils import secure_filename  # Add this import at the top
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
 
+# ---------------- Image / Memory Optimization Constants ----------------
+# These can be tuned via environment variables at deploy time.
+MAX_SOURCE_SIDE = int(os.getenv("MAX_SOURCE_SIDE", "2048"))          # Hard cap for any uploaded image side length
+WORKING_THUMB_SIDE = int(os.getenv("WORKING_THUMB_SIDE", "1024"))      # Size we downscale to for compositing
+MAX_COMBINE_MEMORY_BYTES = int(os.getenv("MAX_COMBINE_MEMORY_BYTES", str(150 * 1024 * 1024)))  # ~150MB safety cap
+JPEG_QUALITY = int(os.getenv("JPEG_QUALITY", "85"))
+MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(5 * 1024 * 1024)))  # 5MB per file default
+ENABLE_MEM_LOG = os.getenv("ENABLE_MEM_LOG", "0") == "1"
+
+def optimize_saved_image(path: str):
+    """Shrink and recompress an already-saved upload in-place to save RAM + disk.
+    - Limits max side to MAX_SOURCE_SIDE.
+    - Converts to RGB JPEG (quality configurable) to drastically reduce footprint.
+    Silently ignores failures so it never breaks the request path.
+    """
+    try:
+        if not os.path.exists(path):
+            return
+        with Image.open(path) as im:
+            im = im.convert("RGB")
+            if im.width > MAX_SOURCE_SIDE or im.height > MAX_SOURCE_SIDE:
+                im.thumbnail((MAX_SOURCE_SIDE, MAX_SOURCE_SIDE), Image.LANCZOS)
+            # Re-save as JPEG (even if originally PNG) to cut size.
+            im.save(path, format='JPEG', quality=JPEG_QUALITY, optimize=True)
+    except Exception as e:
+        logging.warning(f"optimize_saved_image failed for {path}: {e}")
+
+def log_memory(prefix: str):
+    if not ENABLE_MEM_LOG:
+        return
+    try:
+        import psutil, os as _os
+        proc = psutil.Process(_os.getpid())
+        rss = proc.memory_info().rss / (1024 * 1024)
+        logging.debug(f"{prefix} RSS: {rss:.1f} MB")
+    except Exception:
+        pass
+
+def save_generated_image(b64_data: str, upload_dir: str, base_name: str):
+    """Decode a base64 PNG returned by a model and optionally transcode to JPEG to save space.
+    OUTPUT_IMAGE_FORMAT env var controls final format (png or jpeg). Defaults to png.
+    Returns absolute file path of saved image.
+    """
+    target_format = os.getenv("OUTPUT_IMAGE_FORMAT", "png").lower()
+    tmp_png_path = os.path.join(upload_dir, f"{base_name}.png")
+    try:
+        with open(tmp_png_path, 'wb') as f:
+            f.write(base64.b64decode(b64_data))
+    except Exception as e:
+        logging.error(f"Failed writing raw generated image: {e}")
+        raise
+
+    if target_format in ("jpg", "jpeg"):
+        try:
+            with Image.open(tmp_png_path) as im:
+                im = im.convert("RGB")
+                jpeg_path = os.path.join(upload_dir, f"{base_name}.jpg")
+                im.save(jpeg_path, format='JPEG', quality=JPEG_QUALITY, optimize=True)
+            # Remove larger png if jpeg smaller
+            try:
+                if os.path.getsize(jpeg_path) < os.path.getsize(tmp_png_path):
+                    os.remove(tmp_png_path)
+                    return jpeg_path
+            except OSError:
+                return jpeg_path
+            return jpeg_path
+        except Exception as e:
+            logging.warning(f"Transcode to JPEG failed, keeping PNG: {e}")
+            return tmp_png_path
+    return tmp_png_path
+
 
 # Load FAQ data (unchanged)
 with open('faq.json', 'r', encoding='utf-8') as file:
@@ -74,23 +145,35 @@ def combine_images(image_paths, output_path, max_size=1024):
 
     unique_images = []
     seen_hashes = set()
+    est_total_bytes = 0
 
     for path in image_paths:
         try:
             with Image.open(path) as img:
                 img = img.convert("RGB")
 
-                # Resize while keeping aspect ratio
+                # Hard limit on original size
+                if img.width > MAX_SOURCE_SIDE or img.height > MAX_SOURCE_SIDE:
+                    img.thumbnail((MAX_SOURCE_SIDE, MAX_SOURCE_SIDE), Image.LANCZOS)
+
+                # Resize for working composite
                 img.thumbnail((max_size, max_size), Image.LANCZOS)
 
-                # Hash for duplicates
+                # Hash for duplicates (dimension + md5 of raw bytes)
                 img_bytes = img.tobytes()
-                img_hash = hashlib.md5(img_bytes).hexdigest()
+                img_hash = f"{img.width}x{img.height}-" + hashlib.md5(img_bytes).hexdigest()
 
-                if img_hash not in seen_hashes:
-                    seen_hashes.add(img_hash)
-                    unique_images.append(img)
+                if img_hash in seen_hashes:
+                    continue
+                seen_hashes.add(img_hash)
 
+                est_total_bytes += len(img_bytes)
+                if est_total_bytes > MAX_COMBINE_MEMORY_BYTES:
+                    logging.warning("combine_images aborted: memory estimate exceeded limit")
+                    break
+
+                # Keep a copy and immediately free original reference
+                unique_images.append(img.copy())
         except Exception as e:
             logging.error(f"Error processing {path}: {e}")
             continue
@@ -98,27 +181,31 @@ def combine_images(image_paths, output_path, max_size=1024):
     if not unique_images:
         raise ValueError("No valid images to combine")
 
-    # Make all images same height
-    max_height = max(img.height for img in unique_images)
-    resized_images = []
-    for img in unique_images:
-        if img.height < max_height:
-            ratio = max_height / img.height
-            new_width = int(img.width * ratio)
-            img = img.resize((new_width, max_height), Image.LANCZOS)
-        resized_images.append(img)
+    # Normalize heights
+    max_height = max(im.height for im in unique_images)
+    normalized = []
+    for im in unique_images:
+        if im.height < max_height:
+            ratio = max_height / im.height
+            new_w = int(im.width * ratio)
+            im = im.resize((new_w, max_height), Image.LANCZOS)
+        normalized.append(im)
 
-    # Combine horizontally
-    total_width = sum(img.width for img in resized_images)
-    new_im = Image.new('RGB', (total_width, max_height), color='white')
+    total_width = sum(im.width for im in normalized)
+    new_im = Image.new('RGB', (total_width, max_height), 'white')
 
-    x_offset = 0
-    for img in resized_images:
-        new_im.paste(img, (x_offset, 0))
-        x_offset += img.width
+    x_off = 0
+    for im in normalized:
+        new_im.paste(im, (x_off, 0))
+        x_off += im.width
 
-    new_im.save(output_path, format='JPEG')
+    new_im.save(output_path, format='JPEG', quality=JPEG_QUALITY, optimize=True)
     logging.info(f"Combined image saved at {output_path}")
+
+    # Explicit cleanup
+    del unique_images
+    del normalized
+    del new_im
 from rapidfuzz import fuzz
 
 # Function to check similarity
@@ -389,63 +476,52 @@ def extract_logo():
             return jsonify({"error": "No file uploaded"}), 400
 
         file = request.files['file']
+        file.stream.seek(0, os.SEEK_END)
+        size = file.stream.tell()
+        file.stream.seek(0)
+        if size > MAX_UPLOAD_BYTES:
+            return jsonify({"error": f"File too large. Max {MAX_UPLOAD_BYTES//1024//1024}MB"}), 400
         if file.filename == '':
             return jsonify({"error": "No file selected"}), 400
 
-        # Securely save the uploaded file (optional, but recommended)
+        # Securely save the uploaded file
         filename = secure_filename(file.filename)
         upload_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         try:
             file.save(upload_path)
-            print(f"File saved successfully to {upload_path}")  # Confirm
+            optimize_saved_image(upload_path)
+            logging.debug(f"Upload saved & optimized: {upload_path}")
         except Exception as e:
-            print(f"Error saving file: {e}")
             return jsonify({"error": f"Error saving file: {e}"}), 500
 
+        logging.debug(f"Received file: {file.filename}")
 
-        # Print input image path (in-memory file, so just print filename)
-        print("Received file:", file.filename)
-
-        #image = Image.open(file) #Don't open in memory, load it from the uploaded file, if it fails there is something wrong with the image file
+        # Open & prepare a working copy (downscaled) for the model
         try:
-            image = Image.open(upload_path)
+            with Image.open(upload_path) as img:
+                img = img.convert('RGB')
+                if img.width > WORKING_THUMB_SIDE or img.height > WORKING_THUMB_SIDE:
+                    img.thumbnail((WORKING_THUMB_SIDE, WORKING_THUMB_SIDE), Image.LANCZOS)
+                model_image = img.copy()
         except Exception as e:
-            print(f"Error opening image with PIL: {e}")
             return jsonify({"error": f"Error opening image with PIL: {e}"}), 400
 
-
-
-        # Prepare prompt
-        prompt = "Extract the logo from this image. and display on a white background"  # More explicit prompt
-        print(prompt)
-
-        # Generate content with the prompt and image
-        response = client2.models.generate_content(  # Using client.models.generate_content
+        prompt = "Extract the logo from this image and display it on a pure white background, tightly cropped."  # Clarified prompt
+        response = client2.models.generate_content(
             model=MODEL_ID,
-            contents=[
-                prompt,
-                image
-            ],
-             config=types.GenerateContentConfig(
-            response_modalities=['Text', 'Image']
-        )
+            contents=[prompt, model_image],
+            config=types.GenerateContentConfig(response_modalities=['Text', 'Image'])
         )
 
-        # Extract and return the image (adapted from your edit_image_with_prompt)
         for part in response.candidates[0].content.parts:
             if part.inline_data is not None:
                 data = part.inline_data.data
-                # Debug print the type and length
-                print(f"Data type: {type(data)}")
-                print(f"Data length: {len(data)}")
-
-                logo_filename = "extracted_logo.png"
-                logo_filepath = os.path.join(app.config['UPLOAD_FOLDER'], logo_filename)
+                logo_path = os.path.join(app.config['UPLOAD_FOLDER'], 'extracted_logo.png')
                 try:
-                    pathlib.Path(logo_filepath).write_bytes(data)  # Write as bytes
-                    return send_file(logo_filepath, mimetype='image/png')
+                    pathlib.Path(logo_path).write_bytes(data)
+                    optimize_saved_image(logo_path)
+                    return send_file(logo_path, mimetype='image/png')
                 except Exception as e:
-                    print(f"Error writing image to file: {e}")
                     return jsonify({"error": f"Error writing image to file: {e}"}), 500
 
         return jsonify({"error": "No image returned from model"}), 500
@@ -502,38 +578,38 @@ def expand_chatbot():
         #  Verify there is an image
         if not uploaded_files:
             return jsonify({"response": "No image provided for expansion"}), 400
-        
+
         # Process just the first image
         uploaded_file = uploaded_files[0]
+        uploaded_file.stream.seek(0, os.SEEK_END)
+        size = uploaded_file.stream.tell(); uploaded_file.stream.seek(0)
+        if size > MAX_UPLOAD_BYTES:
+            return jsonify({"response": f"File too large. Max {MAX_UPLOAD_BYTES//1024//1024}MB"}), 400
         combined_id = uuid.uuid4().hex[:8]
         combined_path = os.path.join(app.config["UPLOAD_FOLDER"], f"combined_{combined_id}.jpg")
         uploaded_file.save(combined_path)
-        
+        optimize_saved_image(combined_path)
+
         # Generate using ONLY the user's prompt
-        print("Generating image using ONLY user input:", user_input)  # Debugging: Print the prompt being used
+        print("Generating image using ONLY user input:", user_input)
         with open(combined_path, "rb") as image_file:
             result = client.images.edit(
-                model="gpt-image-1",  # Make sure to use the correct model name
+                model="gpt-image-1",
                 image=image_file,
-                prompt=user_input,  # Only using the user's original input
+                prompt=user_input,
             )
-        
-        # Save and return the result
-        output_id = uuid.uuid4().hex[:8]
-        output_filename = f"sculpture_{output_id}.png"
-        output_path = os.path.join(app.config["UPLOAD_FOLDER"], output_filename)
 
-        image_bytes = base64.b64decode(result.data[0].b64_json)
-        with open(output_path, "wb") as f:
-            f.write(image_bytes)
+        # Save and return the result (with optional JPEG conversion)
+        output_id = uuid.uuid4().hex[:8]
+        base_name = f"sculpture_{output_id}"
+        output_path = save_generated_image(result.data[0].b64_json, app.config["UPLOAD_FOLDER"], base_name)
+        output_filename = os.path.basename(output_path)
 
         print("Image generated successfully. Returning:", {"image_url": f"/static/uploads/{output_filename}"})
-        return jsonify({
-            "image_url": f"/static/uploads/{output_filename}"
-        })
-        
+        return jsonify({"image_url": f"/static/uploads/{output_filename}"})
+
     except Exception as e:
-        print(f"Error expanding image: {str(e)}")
+        logging.exception("expand_chatbot failed")
         return jsonify({"response": f"Error expanding image: {str(e)}"}), 500
     
 @app.route("/chatbot", methods=["POST"])
@@ -565,8 +641,13 @@ def chatbot():
             uploaded_ids = [uuid.uuid4().hex[:8] for _ in uploaded_files]
             uploaded_paths = [os.path.join(app.config["UPLOAD_FOLDER"], f"uploaded_{id}.jpg") for id in uploaded_ids]
             for i, file in enumerate(uploaded_files):
+                file.stream.seek(0, os.SEEK_END)
+                size = file.stream.tell(); file.stream.seek(0)
+                if size > MAX_UPLOAD_BYTES:
+                    return jsonify({"response": f"One of the files is too large (>{MAX_UPLOAD_BYTES//1024//1024}MB)"})
                 file.save(uploaded_paths[i])
-                logging.debug(f"Saved uploaded file: {uploaded_paths[i]}")
+                optimize_saved_image(uploaded_paths[i])
+                logging.debug(f"Saved & optimized uploaded file: {uploaded_paths[i]}")
         
         combined_id = uuid.uuid4().hex[:8]
         combined_path = os.path.join(app.config["UPLOAD_FOLDER"], f"combined_{combined_id}.jpg")
@@ -590,15 +671,11 @@ def chatbot():
                     image=image_file,
                     prompt=image_generation_prompt,
                 )
-            
             output_id = uuid.uuid4().hex[:8]
-            output_filename = f"sculpture_{output_id}.png"
+            base_name = f"sculpture_{output_id}"
+            output_path = save_generated_image(result.data[0].b64_json, app.config["UPLOAD_FOLDER"], base_name)
+            output_filename = os.path.basename(output_path)
             print("Ice Cube Image Created")
-            output_path = os.path.join(app.config["UPLOAD_FOLDER"], output_filename)
-
-            image_bytes = base64.b64decode(result.data[0].b64_json)
-            with open(output_path, "wb") as f:
-                f.write(image_bytes)
 
             session["conversation"].append({"role": "user", "content": user_input})
             session["conversation"].append({
@@ -642,7 +719,8 @@ def chatbot():
             uploaded_paths = [os.path.join(app.config["UPLOAD_FOLDER"], f"uploaded_{id}.jpg") for id in uploaded_ids]
             for i, file in enumerate(uploaded_files):
                 file.save(uploaded_paths[i])
-                logging.debug(f"Saved uploaded file: {uploaded_paths[i]}")
+                optimize_saved_image(uploaded_paths[i])
+                logging.debug(f"Saved & optimized uploaded file: {uploaded_paths[i]}")
         
         # Get full paths to any detected base images
         base_image_paths = [os.path.join("static", img) for img in base_images] if base_images else []
@@ -802,22 +880,14 @@ def chatbot():
             with open(combined_path, "rb") as image_file:
                 result = client.images.edit(
                     model="gpt-image-1",
-                    
                     image=image_file,
                     prompt=image_generation_prompt,
-                    
-                
-                    
                 )
-            
             output_id = uuid.uuid4().hex[:8]
-            output_filename = f"sculpture_{output_id}.png"
+            base_name = f"sculpture_{output_id}"
+            output_path = save_generated_image(result.data[0].b64_json, app.config["UPLOAD_FOLDER"], base_name)
+            output_filename = os.path.basename(output_path)
             print("Image Created")
-            output_path = os.path.join(app.config["UPLOAD_FOLDER"], output_filename)
-
-            image_bytes = base64.b64decode(result.data[0].b64_json)
-            with open(output_path, "wb") as f:
-                f.write(image_bytes)
 
             session["conversation"].append({"role": "user", "content": user_input})
             session["conversation"].append({
@@ -886,13 +956,10 @@ def chatbot():
                 
             )
 
-            output_filename = f"generated_{generation_id}.png"
+            base_name = f"generated_{generation_id}"
+            output_path = save_generated_image(result.data[0].b64_json, app.config["UPLOAD_FOLDER"], base_name)
+            output_filename = os.path.basename(output_path)
             print("Image Created")
-            output_path = os.path.join(app.config["UPLOAD_FOLDER"], output_filename)
-
-            image_bytes = base64.b64decode(result.data[0].b64_json)
-            with open(output_path, "wb") as f:
-                f.write(image_bytes)
 
             session["conversation"].append({"role": "user", "content": user_input})
             session["conversation"].append({
@@ -911,6 +978,11 @@ def chatbot():
         return jsonify({"response": f"Error: {str(e)}"})
 
 if __name__ == "__main__":
+    # Development server ONLY.
+    # In production, run with Gunicorn (example Procfile line):
+    # web: gunicorn app:app --workers=1 --threads=4 --timeout=180
     if not os.path.exists(app.config["UPLOAD_FOLDER"]):
         os.makedirs(app.config["UPLOAD_FOLDER"])
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    debug = os.getenv("FLASK_DEBUG", "0") == "1"
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=debug)
